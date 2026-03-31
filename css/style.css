@@ -256,7 +256,7 @@ body {
 .table-area {
     flex: 1;
     display: grid;
-    grid-template-columns: 160px 1fr 160px;
+    grid-template-columns: 200px 1fr 200px;
     grid-template-rows: auto 1fr auto;
     gap: 5px;
     padding: 10px;
@@ -274,7 +274,6 @@ body {
     justify-content: center;
     min-width: 0;
     min-height: 0;
-    position: relative;
 }
 
 .hand-north {
@@ -328,31 +327,61 @@ body {
     justify-content: center;
     flex-wrap: nowrap;
     gap: 0;
-    min-height: 80px;
+    min-height: 120px;
 }
 
 .cards-container .card {
-    width: 55px;
-    height: 80px;
+    width: 82px;
+    height: 120px;
     background: #fff;
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: 1em;
+    border-radius: 8px;
+    display: block;
+    font-size: 1.3em;
     color: #333;
     cursor: default;
     transition: all 0.2s;
-    margin-left: -15px;
-    box-shadow: 1px 1px 5px rgba(0,0,0,0.4);
+    margin-left: -25px;
+    box-shadow: 1px 2px 6px rgba(0,0,0,0.4);
     position: relative;
     user-select: none;
     border: 1px solid #ccc;
+    overflow: hidden;
 }
 
 .cards-container .card:first-child {
     margin-left: 0;
+}
+
+/* Card corners */
+.card .card-tl, .card .card-br {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+    font-size: 0.65em;
+    font-weight: bold;
+}
+
+.card .card-tl {
+    top: 4px;
+    left: 5px;
+}
+
+.card .card-br {
+    bottom: 4px;
+    right: 5px;
+    transform: rotate(180deg);
+}
+
+/* Card center symbol */
+.card .card-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2em;
+    line-height: 1;
 }
 
 .cards-container .card.red-card {
@@ -384,15 +413,16 @@ body {
     border-color: #0f2870;
 }
 
-.card .card-rank {
+/* Legacy card-rank / card-suit kept for trick cards */
+.trick-card .card-rank {
     font-weight: bold;
-    font-size: 1.1em;
-    line-height: 1;
+    font-size: 1.3em;
+    line-height: 1.2;
 }
 
-.card .card-suit {
-    font-size: 1.2em;
-    line-height: 1;
+.trick-card .card-suit {
+    font-size: 1.5em;
+    line-height: 1.2;
 }
 
 /* Vertical cards (East/West) */
@@ -404,9 +434,9 @@ body {
 
 .cards-vertical .card {
     margin-left: 0;
-    margin-top: -50px;
-    width: 55px;
-    height: 80px;
+    margin-top: -80px;
+    width: 82px;
+    height: 120px;
 }
 
 .cards-vertical .card:first-child {
@@ -421,7 +451,7 @@ body {
     align-items: center;
     justify-content: center;
     position: relative;
-    min-height: 250px;
+    min-height: 300px;
 }
 
 /* Bidding Panel */
@@ -547,23 +577,63 @@ body {
     padding: 8px 20px;
 }
 
-/* Trick Cards - placed in front of each player */
+/* Trick Area - center of the table */
+.trick-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+
 .trick-card {
-    width: 55px;
-    height: 80px;
+    position: absolute;
+    width: 82px;
+    height: 120px;
+    display: block;
+    background: #fff;
+    border-radius: 8px;
+    font-size: 1.3em;
+    color: #333;
+    box-shadow: 2px 3px 10px rgba(0,0,0,0.5);
+    border: 2px solid #ddd;
+    z-index: 10;
+    overflow: hidden;
+}
+
+/* Trick card corners (same as hand cards) */
+.trick-card .card-tl, .trick-card .card-br {
+    position: absolute;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    background: #fff;
-    border-radius: 6px;
-    font-size: 1em;
-    color: #333;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.4);
-    border: 1px solid #ccc;
-    transition: all 0.3s;
-    flex-shrink: 0;
+    line-height: 1.1;
+    font-size: 0.65em;
+    font-weight: bold;
 }
+
+.trick-card .card-tl {
+    top: 4px;
+    left: 5px;
+}
+
+.trick-card .card-br {
+    bottom: 4px;
+    right: 5px;
+    transform: rotate(180deg);
+}
+
+.trick-card .card-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2em;
+    line-height: 1;
+}
+
+/* Legacy card-rank / card-suit removed - using corner layout */
 
 .trick-card.red-card {
     color: #e74c3c;
@@ -571,46 +641,16 @@ body {
 
 .trick-card.empty {
     background: transparent;
-    border: 1px dashed rgba(255,255,255,0.1);
+    border: none;
     box-shadow: none;
     color: transparent;
-    height: 0;
-    width: 0;
-    border: none;
-    overflow: hidden;
 }
 
-/* North: card below hand */
-.hand-north .trick-card:not(.empty) {
-    margin-top: 6px;
-}
-
-/* South: card above hand */
-.hand-south .trick-card:not(.empty) {
-    margin-bottom: 6px;
-}
-
-/* West: card to the right of hand (toward center) */
-.hand-west-inner {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
-}
-.hand-west-inner .trick-card:not(.empty) {
-    margin-left: 10px;
-}
-
-/* East: card to the left of hand (toward center) */
-.hand-east-inner {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
-}
-.hand-east-inner .trick-card:not(.empty) {
-    margin-right: 10px;
-}
+/* Position each trick card toward its player */
+.trick-north { top: 10%; left: 50%; transform: translateX(-50%); }
+.trick-south { bottom: 10%; left: 50%; transform: translateX(-50%); }
+.trick-west  { left: 15%; top: 50%; transform: translateY(-50%); }
+.trick-east  { right: 15%; top: 50%; transform: translateY(-50%); }
 
 /* Message Area */
 .message-area {
@@ -697,19 +737,27 @@ body {
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 768px) {
     .table-area {
-        grid-template-columns: 80px 1fr 80px;
+        grid-template-columns: 100px 1fr 100px;
     }
 
     .cards-container .card {
-        width: 42px;
-        height: 62px;
-        font-size: 0.8em;
-        margin-left: -12px;
+        width: 55px;
+        height: 80px;
+        font-size: 1em;
+        margin-left: -18px;
     }
 
     .cards-vertical .card {
-        margin-top: -40px;
+        margin-top: -55px;
         margin-left: 0;
+        width: 55px;
+        height: 80px;
+    }
+
+    .trick-card {
+        width: 55px;
+        height: 80px;
+        font-size: 1em;
     }
 
     .settings-container {
@@ -723,12 +771,6 @@ body {
     .seat-table {
         width: 220px;
         height: 220px;
-    }
-
-    .trick-card {
-        width: 42px;
-        height: 62px;
-        font-size: 0.8em;
     }
 
     #bidding-panel {
