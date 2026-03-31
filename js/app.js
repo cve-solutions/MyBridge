@@ -109,17 +109,19 @@ class BridgeApp {
         document.getElementById('back-settings-btn').addEventListener('click', () => this._showScreen('settings-screen'));
 
         // Modal close buttons
-        document.getElementById('convention-close-btn').addEventListener('click', () => {
-            document.getElementById('convention-modal').classList.add('hidden');
+        document.getElementById('convention-close-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._closeModal('convention-modal');
         });
-        document.getElementById('analysis-close-btn').addEventListener('click', () => {
-            document.getElementById('analysis-modal').classList.add('hidden');
+        document.getElementById('analysis-close-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._closeModal('analysis-modal');
         });
 
         // Close modals on overlay click
         document.querySelectorAll('.modal-overlay').forEach(modal => {
             modal.addEventListener('click', (e) => {
-                if (e.target === modal) modal.classList.add('hidden');
+                if (e.target === modal) this._closeModal(modal.id);
             });
         });
     }
@@ -797,6 +799,20 @@ class BridgeApp {
         window.location.href = '/';
     }
 
+    // ==================== MODAL HELPERS ====================
+
+    _openModal(id) {
+        const el = document.getElementById(id);
+        el.style.display = 'flex';
+        el.classList.remove('hidden');
+    }
+
+    _closeModal(id) {
+        const el = document.getElementById(id);
+        el.style.display = 'none';
+        el.classList.add('hidden');
+    }
+
     // ==================== DEAL ANALYSIS ====================
 
     _showAnalysis() {
@@ -901,8 +917,224 @@ class BridgeApp {
             html += '</div>';
         }
 
+        // 5. Expert recommendations
+        html += this._generateExpertAdvice(gs);
+
         document.getElementById('analysis-body').innerHTML = html;
-        document.getElementById('analysis-modal').classList.remove('hidden');
+        this._openModal('analysis-modal');
+    }
+
+    _generateExpertAdvice(gs) {
+        const tips = [];
+        const humanPos = gs.humanPos;
+        const humanHand = gs.originalHands[humanPos];
+        if (!humanHand) return '';
+        const humanEval = evaluateHand(humanHand);
+        const partnerPos = partnerOf(humanPos);
+        const partnerHand = gs.originalHands[partnerPos];
+        const partnerEval = partnerHand ? evaluateHand(partnerHand) : null;
+        const combinedHCP = humanEval.hcp + (partnerEval ? partnerEval.hcp : 0);
+
+        // ---- Bidding advice ----
+        const humanBids = gs.bidding ? gs.bidding.bids.filter(b => b.player === humanPos && b.type === 'bid') : [];
+        const partnerBids = gs.bidding ? gs.bidding.bids.filter(b => b.player === partnerPos && b.type === 'bid') : [];
+
+        // Opening analysis
+        if (humanBids.length === 0 && humanEval.hcp >= 12) {
+            tips.push({
+                type: 'encheres',
+                icon: 'warning',
+                text: `Vous aviez ${humanEval.hcp} HCP et n'avez pas ouvert. Avec 12+ HCP, vous devriez ouvrir les ench\u00e8res.`
+            });
+        }
+
+        if (humanBids.length > 0 && humanBids[0].level === 1 && humanBids[0].suit !== 'NT') {
+            const openSuit = humanBids[0].suit;
+            if ((openSuit === 'H' || openSuit === 'S') && humanEval.suitCounts[openSuit] < 5) {
+                tips.push({
+                    type: 'encheres',
+                    icon: 'error',
+                    text: `Vous avez ouvert 1${SUIT_SYMBOLS[openSuit]} avec seulement ${humanEval.suitCounts[openSuit]} cartes. En majeure 5e, il faut 5+ cartes pour ouvrir d'une majeure.`
+                });
+            }
+        }
+
+        // NT opening check
+        if (humanEval.isBalanced && humanEval.hcp >= 15 && humanEval.hcp <= 17) {
+            const opened1NT = humanBids.length > 0 && humanBids[0].level === 1 && humanBids[0].suit === 'NT';
+            if (!opened1NT && humanBids.length > 0) {
+                tips.push({
+                    type: 'encheres',
+                    icon: 'info',
+                    text: `Avec ${humanEval.hcp} HCP et une main \u00e9quilibr\u00e9e, l'ouverture de 1SA \u00e9tait \u00e0 consid\u00e9rer.`
+                });
+            }
+        }
+
+        // Combined strength analysis
+        if (gs.contract && partnerEval) {
+            const required = gs.contract.level + 6;
+            const declarerTeam = teamOf(gs.contract.declarer);
+            const isOurContract = teamOf(humanPos) === declarerTeam;
+
+            if (isOurContract) {
+                // Check if right contract level
+                if (combinedHCP >= 25 && gs.contract.level < 3 && gs.contract.suit === 'NT') {
+                    tips.push({
+                        type: 'encheres',
+                        icon: 'info',
+                        text: `Avec ${combinedHCP} HCP combin\u00e9s, la manche (3SA ou 4 en majeure) \u00e9tait envisageable.`
+                    });
+                }
+                if (combinedHCP >= 33 && gs.contract.level < 6) {
+                    tips.push({
+                        type: 'encheres',
+                        icon: 'info',
+                        text: `Avec ${combinedHCP} HCP combin\u00e9s, un chelem (palier 6) \u00e9tait possible.`
+                    });
+                }
+
+                // Fit analysis
+                for (const suit of ['S', 'H']) {
+                    const fitCount = humanEval.suitCounts[suit] + (partnerEval ? partnerEval.suitCounts[suit] : 0);
+                    if (fitCount >= 8) {
+                        const playedInSuit = gs.contract.suit === suit;
+                        if (!playedInSuit && gs.contract.suit === 'NT') {
+                            tips.push({
+                                type: 'encheres',
+                                icon: 'info',
+                                text: `Vous aviez un fit de ${fitCount} cartes \u00e0 ${SUIT_SYMBOLS[suit]}. Un contrat en ${SUIT_SYMBOLS[suit]} aurait pu \u00eatre pr\u00e9f\u00e9rable \u00e0 SA.`
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Play advice ----
+        if (gs.contract && gs.tricks.length > 0) {
+            const declarerTeam = teamOf(gs.contract.declarer);
+            const isOurContract = teamOf(humanPos) === declarerTeam;
+            const trump = gs.contract.suit;
+
+            // Analyze each trick for the human's play
+            for (let i = 0; i < gs.tricks.length; i++) {
+                const trick = gs.tricks[i];
+                const humanCard = trick.cards[humanPos];
+                if (!humanCard) continue;
+
+                const winner = trick.getWinner();
+                const partnerCard = trick.cards[partnerPos];
+                const suitLed = trick.suitLed;
+
+                // Did human lead? Check opening lead
+                if (i === 0 && trick.leader === humanPos && !isOurContract) {
+                    // Defensive lead analysis
+                    if (trump === 'NT' && humanCard.suit) {
+                        const suitLen = humanEval.suitCounts[humanCard.suit];
+                        const longestSuit = humanEval.longestSuit;
+                        const longestLen = humanEval.suitCounts[longestSuit];
+                        if (suitLen < longestLen && longestLen >= 4) {
+                            tips.push({
+                                type: 'jeu',
+                                icon: 'info',
+                                text: `Lev\u00e9e 1 : Contre SA, privil\u00e9giez l'entame dans votre plus longue couleur (${SUIT_SYMBOLS[longestSuit]}, ${longestLen} cartes) pour \u00e9tablir vos lev\u00e9es de longueur.`
+                            });
+                        }
+                    }
+                }
+
+                // Trump not pulled early (declarer)
+                if (isOurContract && humanPos === gs.contract.declarer && trump !== 'NT' && i <= 2) {
+                    if (trick.leader === humanPos && humanCard.suit !== trump) {
+                        const trumpCount = gs.originalHands[humanPos].filter(c => c.suit === trump).length;
+                        if (trumpCount >= 5) {
+                            const adversaryTrumps = ['E', 'W', 'N', 'S']
+                                .filter(p => teamOf(p) !== declarerTeam)
+                                .some(p => gs.originalHands[p] && gs.originalHands[p].some(c => c.suit === trump));
+                            if (adversaryTrumps && i === 0) {
+                                tips.push({
+                                    type: 'jeu',
+                                    icon: 'info',
+                                    text: `En tant que d\u00e9clarant avec ${trumpCount} atouts, pensez \u00e0 faire tomber les atouts adverses t\u00f4t (jouer atout d\u00e8s que possible).`
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // General result advice
+            const required = gs.contract.level + 6;
+            const made = gs.tricksWon[declarerTeam];
+            const diff = made - required;
+
+            if (isOurContract && diff < 0) {
+                tips.push({
+                    type: 'general',
+                    icon: 'warning',
+                    text: `Le contrat a chut\u00e9 de ${-diff}. Avec ${combinedHCP} HCP combin\u00e9s, un contrat plus prudent aurait peut-\u00eatre \u00e9t\u00e9 pr\u00e9f\u00e9rable.`
+                });
+            }
+
+            if (!isOurContract && diff >= 0) {
+                tips.push({
+                    type: 'general',
+                    icon: 'info',
+                    text: `Les adversaires ont r\u00e9ussi leur contrat. Cherchez si une entame diff\u00e9rente ou un signal d\u00e9fensif aurait pu les mettre en difficult\u00e9.`
+                });
+            }
+
+            if (isOurContract && diff >= 2) {
+                tips.push({
+                    type: 'encheres',
+                    icon: 'info',
+                    text: `+${diff} surlevées ! Vous auriez pu ench\u00e9rir plus haut. Un contrat de ${gs.contract.level + Math.min(diff, 2)}${gs.contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[gs.contract.suit]} \u00e9tait peut-\u00eatre faisable.`
+                });
+            }
+        }
+
+        if (tips.length === 0) {
+            tips.push({
+                type: 'general',
+                icon: 'ok',
+                text: 'Bien jou\u00e9 ! Rien de particulier \u00e0 signaler sur cette donne.'
+            });
+        }
+
+        // Render
+        const iconMap = {
+            error: '\u274c',
+            warning: '\u26a0\ufe0f',
+            info: '\ud83d\udca1',
+            ok: '\u2705'
+        };
+
+        let html = '<div class="analysis-section"><h4>Recommandations de l\'expert</h4>';
+        const biddingTips = tips.filter(t => t.type === 'encheres');
+        const playTips = tips.filter(t => t.type === 'jeu');
+        const generalTips = tips.filter(t => t.type === 'general');
+
+        if (biddingTips.length) {
+            html += '<p style="color:#e94560;margin-bottom:6px"><strong>Ench\u00e8res</strong></p>';
+            for (const t of biddingTips) {
+                html += `<p class="analysis-comment">${iconMap[t.icon]} ${t.text}</p>`;
+            }
+        }
+        if (playTips.length) {
+            html += '<p style="color:#e94560;margin-bottom:6px;margin-top:10px"><strong>Jeu de la carte</strong></p>';
+            for (const t of playTips) {
+                html += `<p class="analysis-comment">${iconMap[t.icon]} ${t.text}</p>`;
+            }
+        }
+        if (generalTips.length) {
+            html += '<p style="color:#e94560;margin-bottom:6px;margin-top:10px"><strong>G\u00e9n\u00e9ral</strong></p>';
+            for (const t of generalTips) {
+                html += `<p class="analysis-comment">${iconMap[t.icon]} ${t.text}</p>`;
+            }
+        }
+        html += '</div>';
+        return html;
     }
 
     // ==================== CONVENTION INFO ====================
@@ -912,7 +1144,7 @@ class BridgeApp {
         if (!info) return;
         document.getElementById('convention-modal-title').textContent = info.title;
         document.getElementById('convention-modal-body').innerHTML = info.html;
-        document.getElementById('convention-modal').classList.remove('hidden');
+        this._openModal('convention-modal');
     }
 
     get _conventionDescriptions() {
