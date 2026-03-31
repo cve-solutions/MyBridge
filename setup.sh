@@ -84,7 +84,7 @@ do_update() {
 
     log_info "Mise à jour des dépendances Node.js..."
     cd "$APP_DIR/server"
-    sudo -u "$APP_USER" npm install --production
+    sudo -u "$APP_USER" npm install --omit=dev
 
     log_info "Mise à jour des permissions..."
     chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
@@ -182,7 +182,7 @@ clone_application() {
 install_node_deps() {
     log_info "Installation des dépendances Node.js..."
     cd "$APP_DIR/server"
-    sudo -u "$APP_USER" npm install --production
+    sudo -u "$APP_USER" npm install --omit=dev
     log_ok "Dépendances Node.js installées."
 }
 

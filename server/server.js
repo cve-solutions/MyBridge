@@ -17,11 +17,11 @@ if (fs.existsSync(envPath)) {
 
 const express = require('express');
 const session = require('express-session');
-const SQLiteStore = require('connect-sqlite3')(session);
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const crypto = require('crypto');
+const Database = require('better-sqlite3');
 const db = require('./db');
 
 const PORT = process.env.PORT || 3000;
@@ -53,12 +53,64 @@ app.use(helmet({
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Session store using better-sqlite3 (no deprecated dependencies)
+class BetterSqliteStore extends session.Store {
+    constructor(options = {}) {
+        super();
+        const dbPath = path.join(options.dir || __dirname, options.db || 'sessions.db');
+        this.db = new Database(dbPath);
+        this.db.pragma('journal_mode = WAL');
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS sessions (
+                sid TEXT PRIMARY KEY,
+                sess TEXT NOT NULL,
+                expired INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
+        `);
+        // Cleanup expired sessions every 15 minutes
+        this._cleanup = setInterval(() => {
+            this.db.prepare('DELETE FROM sessions WHERE expired < ?').run(Date.now());
+        }, 15 * 60 * 1000);
+    }
+
+    get(sid, cb) {
+        try {
+            const row = this.db.prepare('SELECT sess FROM sessions WHERE sid = ? AND expired > ?').get(sid, Date.now());
+            cb(null, row ? JSON.parse(row.sess) : null);
+        } catch (e) { cb(e); }
+    }
+
+    set(sid, sess, cb) {
+        try {
+            const maxAge = sess.cookie && sess.cookie.maxAge ? sess.cookie.maxAge : 86400000;
+            const expired = Date.now() + maxAge;
+            this.db.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)').run(sid, JSON.stringify(sess), expired);
+            cb(null);
+        } catch (e) { cb(e); }
+    }
+
+    destroy(sid, cb) {
+        try {
+            this.db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
+            cb(null);
+        } catch (e) { cb(e); }
+    }
+
+    close() {
+        clearInterval(this._cleanup);
+        this.db.close();
+    }
+}
+
+const sessionStore = new BetterSqliteStore({
+    dir: path.join(__dirname, 'data'),
+    db: 'sessions.db'
+});
+
 // Session
 app.use(session({
-    store: new SQLiteStore({
-        db: 'sessions.db',
-        dir: path.join(__dirname, 'data')
-    }),
+    store: sessionStore,
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -223,18 +275,14 @@ const server = app.listen(PORT, '127.0.0.1', () => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+function shutdown() {
     console.log('Shutting down...');
     server.close(() => {
+        sessionStore.close();
         db.close();
         process.exit(0);
     });
-});
+}
 
-process.on('SIGINT', () => {
-    console.log('Shutting down...');
-    server.close(() => {
-        db.close();
-        process.exit(0);
-    });
-});
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
