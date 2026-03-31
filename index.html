@@ -54,12 +54,22 @@
         <!-- Conventions -->
         <div class="settings-section">
             <h2>Conventions d'enchères</h2>
+            <p class="hint-text">Double-cliquez sur une convention pour voir sa description</p>
             <div class="option-group">
                 <button class="option-btn convention-btn selected" data-convention="sef">SEF (Standard Français)</button>
                 <button class="option-btn convention-btn" data-convention="sayc">SAYC</button>
                 <button class="option-btn convention-btn" data-convention="2over1">2/1 Game Forcing</button>
                 <button class="option-btn convention-btn" data-convention="acol">Acol</button>
                 <button class="option-btn convention-btn" data-convention="standard">Standard American</button>
+            </div>
+        </div>
+
+        <!-- Convention Info Modal -->
+        <div id="convention-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3 id="convention-modal-title"></h3>
+                <div id="convention-modal-body"></div>
+                <button class="primary-btn" onclick="document.getElementById('convention-modal').classList.add('hidden')">Fermer</button>
             </div>
         </div>
 
