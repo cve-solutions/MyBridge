@@ -548,8 +548,8 @@ body {
 
 /* Trick Area */
 .trick-area {
-    width: 200px;
-    height: 200px;
+    width: 280px;
+    height: 240px;
     position: relative;
 }
 
@@ -581,10 +581,10 @@ body {
     color: transparent;
 }
 
-.trick-north { top: 10px; left: 50%; transform: translateX(-50%); }
-.trick-south { bottom: 10px; left: 50%; transform: translateX(-50%); }
-.trick-west  { left: 10px; top: 50%; transform: translateY(-50%); }
-.trick-east  { right: 10px; top: 50%; transform: translateY(-50%); }
+.trick-north { top: 0; left: 50%; transform: translateX(-50%); }
+.trick-south { bottom: 0; left: 50%; transform: translateX(-50%); }
+.trick-west  { left: 20px; top: 50%; transform: translateY(-50%); }
+.trick-east  { right: 20px; top: 50%; transform: translateY(-50%); }
 
 /* Message Area */
 .message-area {
@@ -700,8 +700,8 @@ body {
     }
 
     .trick-area {
-        width: 150px;
-        height: 150px;
+        width: 200px;
+        height: 180px;
     }
 
     .trick-card {
