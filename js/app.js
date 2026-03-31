@@ -492,13 +492,10 @@ class BridgeApp {
             return;
         }
 
-        // AI's turn
+        // AI's turn - play immediately (delay between cards is handled in _executePlay)
         this._renderAllHands();
-
-        setTimeout(() => {
-            const card = this.ai.playCard(gs, currentPlayer);
-            this._executePlay(currentPlayer, card);
-        }, this.aiDelay);
+        const card = this.ai.playCard(gs, currentPlayer);
+        this._executePlay(currentPlayer, card);
     }
 
     _humanPlayCard(pos, card) {
@@ -525,8 +522,11 @@ class BridgeApp {
         // Execute in game state
         const result = gs.playCard(pos, card);
 
+        // Re-render hands to reflect the card that was just played
+        this._renderAllHands();
+
         if (result.trickWinner) {
-            // Trick complete
+            // Trick complete - pause so player can see all 4 cards
             this._updateInfoBar();
 
             setTimeout(() => {
@@ -541,8 +541,17 @@ class BridgeApp {
                 }
             }, this.trickClearDelay);
         } else {
-            // Next player in same trick
-            this._processPlay();
+            // Next player in same trick - add delay so each card is visible
+            const nextPlayer = gs.currentTrick.currentPlayer;
+            if (nextPlayer && !gs.isHumanControlled(nextPlayer)) {
+                // AI plays next: wait before playing so current card is visible
+                setTimeout(() => {
+                    this._processPlay();
+                }, this.aiDelay);
+            } else {
+                // Human plays next: render immediately with clickable cards
+                this._processPlay();
+            }
         }
     }
 
