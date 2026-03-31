@@ -1,6 +1,6 @@
 {
   "name": "mybridge-server",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "MyBridge - Backend serveur pour le jeu de Bridge",
   "main": "server.js",
   "scripts": {
@@ -10,7 +10,7 @@
   "dependencies": {
     "express": "^4.21.0",
     "better-sqlite3": "^11.6.0",
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "express-session": "^1.18.1",
     "helmet": "^8.0.0",
     "express-rate-limit": "^7.4.1"

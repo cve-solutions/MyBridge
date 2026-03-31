@@ -89,6 +89,12 @@ do_update() {
     log_info "Mise à jour des permissions..."
     chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 
+    log_info "Mise à jour de la configuration NGINX..."
+    cp "$APP_DIR/nginx/bridge.conf" "/etc/nginx/sites-available/${DOMAIN}"
+    if [[ "$APP_DIR" != "/opt/mybridge" ]]; then
+        sed -i "s|root /opt/mybridge;|root ${APP_DIR};|" "/etc/nginx/sites-available/${DOMAIN}"
+    fi
+
     log_info "Rechargement NGINX..."
     nginx -t && systemctl reload nginx
 
@@ -341,8 +347,10 @@ setup_ssl() {
     log_info "Installation de la configuration NGINX complète..."
     cp "$APP_DIR/nginx/bridge.conf" "/etc/nginx/sites-available/${DOMAIN}"
 
-    # Update the root path in the config
-    sed -i "s|root /opt/mybridge/public;|root ${APP_DIR};|" "/etc/nginx/sites-available/${DOMAIN}"
+    # Update the root path if APP_DIR differs from default
+    if [[ "$APP_DIR" != "/opt/mybridge" ]]; then
+        sed -i "s|root /opt/mybridge;|root ${APP_DIR};|" "/etc/nginx/sites-available/${DOMAIN}"
+    fi
 
     nginx -t
     systemctl reload nginx
