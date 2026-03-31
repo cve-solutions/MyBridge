@@ -274,8 +274,59 @@ body {
     font-size: 0.9em;
 }
 
+.modal-wide {
+    max-width: 700px;
+}
+
 .modal-box .primary-btn {
     margin-top: 15px;
+}
+
+.analysis-section {
+    margin-bottom: 18px;
+}
+
+.analysis-section h4 {
+    color: #e94560;
+    margin-bottom: 8px;
+    font-size: 1em;
+}
+
+.analysis-hand {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.analysis-suit {
+    font-size: 0.95em;
+}
+
+.analysis-suit .suit-symbol {
+    font-weight: bold;
+    margin-right: 2px;
+}
+
+.analysis-bid-sequence {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.analysis-bid {
+    background: rgba(255,255,255,0.08);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.analysis-comment {
+    color: #aaa;
+    font-size: 0.9em;
+    line-height: 1.5;
+    margin-bottom: 6px;
 }
 
 .primary-btn {
