@@ -1,6 +1,6 @@
 {
   "name": "mybridge-server",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "MyBridge - Backend serveur pour le jeu de Bridge",
   "main": "server.js",
   "scripts": {
