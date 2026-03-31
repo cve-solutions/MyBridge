@@ -110,8 +110,49 @@ class BridgeApp {
         this._saveUserSettings();
         this.gameState = new GameState(this.settings);
         this.ai = new BridgeAI(this.settings);
+        this._layoutTable();
         this._showScreen('game-screen');
         this._startDeal();
+    }
+
+    // ==================== DYNAMIC TABLE LAYOUT ====================
+
+    // Maps bridge positions (N/E/S/W) to screen positions (bottom/top/left/right)
+    // Human player is always at the bottom of the screen
+    _getScreenMap() {
+        // Clockwise from the human: human, LHO, partner, RHO
+        // Screen: bottom, left, top, right
+        const order = { S: ['S','W','N','E'], N: ['N','E','S','W'], E: ['E','S','W','N'], W: ['W','N','E','S'] };
+        const seats = order[this.settings.seat];
+        return {
+            [seats[0]]: 'bottom',
+            [seats[1]]: 'left',
+            [seats[2]]: 'top',
+            [seats[3]]: 'right'
+        };
+    }
+
+    _layoutTable() {
+        const map = this._getScreenMap();
+        this._screenMap = map;
+
+        // Assign screen position classes to hand areas
+        for (const pos of POSITIONS) {
+            const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
+            const handEl = document.getElementById(`hand-${posName}`);
+            // Remove old seat classes
+            handEl.classList.remove('seat-top', 'seat-bottom', 'seat-left', 'seat-right');
+            // Add new one
+            handEl.classList.add(`seat-${map[pos]}`);
+        }
+
+        // Assign screen position classes to trick cards
+        for (const pos of POSITIONS) {
+            const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
+            const trickEl = document.getElementById(`trick-${posName}`);
+            trickEl.classList.remove('trick-pos-top', 'trick-pos-bottom', 'trick-pos-left', 'trick-pos-right');
+            trickEl.classList.add(`trick-pos-${map[pos]}`);
+        }
     }
 
     _startDeal() {
@@ -480,8 +521,8 @@ class BridgeApp {
     }
 
     _clearTrickDisplay() {
-        for (const pos of ['north', 'south', 'east', 'west']) {
-            const el = document.getElementById(`trick-${pos}`);
+        for (const posName of ['north', 'south', 'east', 'west']) {
+            const el = document.getElementById(`trick-${posName}`);
             el.innerHTML = '';
             el.classList.add('empty');
             el.classList.remove('red-card');
