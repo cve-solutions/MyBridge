@@ -202,48 +202,135 @@ class BridgeAI {
     }
 
     _getRebid(eval_, pos, bidding, noise) {
-        const hcp = eval_.hcp + noise;
-        const lastBid = bidding.lastBid;
+        const hcp = eval_.hcp; // No noise on rebids - opener already committed
+        const tp = eval_.totalPoints;
+        const partner = partnerOf(pos);
+        const myBids = bidding.bids.filter(b => b.player === pos && b.type === 'bid');
+        const partnerBids = bidding.bids.filter(b => b.player === partner && b.type === 'bid');
 
-        if (!lastBid) return this._pass(pos);
-
-        // Check if we should double
-        if (bidding.canDouble(pos) && hcp >= 15) {
-            return new Bid('double', null, null, pos);
+        if (!partnerBids.length) {
+            // Partner never bid - we can pass or compete
+            if (bidding.canDouble(pos) && hcp >= 15) {
+                return new Bid('double', null, null, pos);
+            }
+            return this._pass(pos);
         }
 
-        // Check if we can raise
-        const partnerBids = bidding.bids.filter(b => b.player === partnerOf(pos) && b.type === 'bid');
-        if (partnerBids.length > 0) {
-            const partnerSuit = partnerBids[partnerBids.length - 1].suit;
-            const support = eval_.suitCounts[partnerSuit] || 0;
+        const myLastBid = myBids[myBids.length - 1];
+        const partnerLastBid = partnerBids[partnerBids.length - 1];
+        const partnerSuit = partnerLastBid.suit;
+        const support = partnerSuit !== 'NT' ? (eval_.suitCounts[partnerSuit] || 0) : 0;
 
-            // Game try
-            if (hcp >= 16 && support >= 3) {
-                if (partnerSuit === 'H' || partnerSuit === 'S') {
-                    const bid = this._tryBid(4, partnerSuit, pos, bidding);
+        // ==================== OPENER'S REBID ====================
+        // After opening and partner responded in a new suit at 1-level: FORCING
+        // Opener MUST bid again
+        const isOpenerRebid = myBids.length === 1 && partnerBids.length === 1;
+
+        if (isOpenerRebid) {
+            const myOpenSuit = myLastBid.suit;
+
+            // 1) Raise partner's major with 4+ support
+            if ((partnerSuit === 'H' || partnerSuit === 'S') && support >= 4) {
+                if (tp >= 16) {
+                    const bid = this._tryBid(3, partnerSuit, pos, bidding);
                     if (bid) return bid;
                 }
+                const bid = this._tryBid(2, partnerSuit, pos, bidding);
+                if (bid) return bid;
+            }
+
+            // 2) Rebid NT with balanced hand
+            if (eval_.isBalanced) {
+                if (hcp >= 18 && hcp <= 19) {
+                    const bid = this._tryBid(2, 'NT', pos, bidding);
+                    if (bid) return bid;
+                }
+                if (hcp >= 12 && hcp <= 14) {
+                    const bid = this._tryBid(1, 'NT', pos, bidding);
+                    if (bid) return bid;
+                }
+            }
+
+            // 3) Show a new 4+ card suit at cheapest level
+            for (const suit of ['S', 'H', 'D', 'C']) {
+                if (suit === myOpenSuit) continue;
+                if (eval_.suitCounts[suit] >= 4) {
+                    // Try at 1-level first, then 2-level
+                    let bid = this._tryBid(1, suit, pos, bidding);
+                    if (bid) return bid;
+                    if (hcp >= 12) {
+                        bid = this._tryBid(2, suit, pos, bidding);
+                        if (bid) return bid;
+                    }
+                }
+            }
+
+            // 4) Rebid own suit with 6+ cards
+            if (eval_.suitCounts[myOpenSuit] >= 6) {
+                if (hcp >= 16) {
+                    const bid = this._tryBid(3, myOpenSuit, pos, bidding);
+                    if (bid) return bid;
+                }
+                const bid = this._tryBid(2, myOpenSuit, pos, bidding);
+                if (bid) return bid;
+            }
+
+            // 5) Rebid 1NT as fallback (catch-all for 12-14 unbalanced)
+            let bid = this._tryBid(1, 'NT', pos, bidding);
+            if (bid) return bid;
+
+            // 6) Raise partner's suit with 3 cards
+            if (support >= 3) {
+                bid = this._tryBid(2, partnerSuit, pos, bidding);
+                if (bid) return bid;
+            }
+
+            // 7) Absolute fallback - rebid own suit at cheapest level
+            for (let l = 2; l <= 4; l++) {
+                bid = this._tryBid(l, myOpenSuit, pos, bidding);
+                if (bid) return bid;
+            }
+
+            // Should never reach here, but just in case
+            return this._pass(pos);
+        }
+
+        // ==================== RESPONDER'S REBID ====================
+        if (myBids.length === 1 && partnerBids.length >= 2) {
+            // Partner rebid - decide based on combined strength
+            // Raise partner with fit
+            if (support >= 3) {
+                if (tp >= 10) {
+                    const bid = this._tryBid(partnerLastBid.level + 1, partnerSuit, pos, bidding);
+                    if (bid) return bid;
+                }
+            }
+            // Game bid with strong hand
+            if (hcp >= 12 && support >= 3 && (partnerSuit === 'H' || partnerSuit === 'S')) {
+                const bid = this._tryBid(4, partnerSuit, pos, bidding);
+                if (bid) return bid;
+            }
+            if (hcp >= 12 && eval_.isBalanced) {
                 const bid = this._tryBid(3, 'NT', pos, bidding);
                 if (bid) return bid;
             }
+            return this._pass(pos);
         }
 
-        // Simple competitive rebid
-        if (hcp >= 12) {
-            // Try NT
-            if (eval_.isBalanced) {
-                for (let l = 1; l <= 3; l++) {
-                    const bid = this._tryBid(l, 'NT', pos, bidding);
-                    if (bid) return bid;
-                }
-            }
-            // Try own suit
-            const longest = this._getLongestSuit(eval_);
-            for (let l = 1; l <= 4; l++) {
-                const bid = this._tryBid(l, longest, pos, bidding);
+        // ==================== LATER ROUNDS ====================
+        // Raise partner's last suit if we have fit and points
+        if (support >= 3 && hcp >= 14) {
+            if ((partnerSuit === 'H' || partnerSuit === 'S') && support >= 3) {
+                const bid = this._tryBid(4, partnerSuit, pos, bidding);
                 if (bid) return bid;
             }
+            const bid = this._tryBid(3, 'NT', pos, bidding);
+            if (bid) return bid;
+        }
+
+        // Competitive double
+        if (bidding.canDouble(pos) && hcp >= 15) {
+            return new Bid('double', null, null, pos);
         }
 
         return this._pass(pos);
