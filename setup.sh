@@ -54,6 +54,23 @@ check_os() {
     log_ok "OS détecté: $PRETTY_NAME"
 }
 
+# ==================== PERMISSIONS ====================
+fix_permissions() {
+    # App root must be traversable by NGINX (www-data)
+    chmod 755 "$APP_DIR"
+
+    # Static directories: readable by NGINX
+    find "$APP_DIR/css" "$APP_DIR/js" -type d -exec chmod 755 {} \; 2>/dev/null || true
+    find "$APP_DIR/css" "$APP_DIR/js" -type f -exec chmod 644 {} \; 2>/dev/null || true
+
+    # HTML and public files at root
+    chmod 644 "$APP_DIR"/*.html 2>/dev/null || true
+    chmod 644 "$APP_DIR"/version.json 2>/dev/null || true
+
+    # Server data dir: only mybridge user
+    chmod 750 "$APP_DIR/server" 2>/dev/null || true
+}
+
 # ==================== UPDATE MODE ====================
 do_update() {
     log_info "=========================================="
@@ -88,6 +105,7 @@ do_update() {
 
     log_info "Mise à jour des permissions..."
     chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
+    fix_permissions
 
     log_info "Mise à jour de la configuration NGINX..."
     cp "$APP_DIR/nginx/bridge.conf" "/etc/nginx/sites-available/${DOMAIN}"
@@ -182,6 +200,10 @@ clone_application() {
         git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
         chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
     fi
+
+    # Ensure NGINX (www-data) can read static files
+    fix_permissions
+
     log_ok "Code source en place."
 }
 
