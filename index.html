@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyBridge - Jeu de Bridge</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ==================== SETTINGS SCREEN ==================== -->
+<div id="settings-screen" class="screen active">
+    <div class="settings-container">
+        <h1 class="title">♠ MyBridge ♥</h1>
+        <p class="subtitle">Jeu de Bridge en ligne</p>
+
+        <!-- Seat Selection -->
+        <div class="settings-section">
+            <h2>Choisissez votre place</h2>
+            <div class="seat-picker">
+                <div class="seat-table">
+                    <div class="seat-pos seat-north" data-seat="N">
+                        <div class="seat-label">Nord</div>
+                        <div class="seat-icon">N</div>
+                    </div>
+                    <div class="seat-pos seat-west" data-seat="W">
+                        <div class="seat-label">Ouest</div>
+                        <div class="seat-icon">O</div>
+                    </div>
+                    <div class="seat-center-table"></div>
+                    <div class="seat-pos seat-east" data-seat="E">
+                        <div class="seat-label">Est</div>
+                        <div class="seat-icon">E</div>
+                    </div>
+                    <div class="seat-pos seat-south selected" data-seat="S">
+                        <div class="seat-label">Sud</div>
+                        <div class="seat-icon">S</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Difficulty -->
+        <div class="settings-section">
+            <h2>Niveau de difficulté</h2>
+            <div class="option-group">
+                <button class="option-btn" data-level="beginner">Débutant</button>
+                <button class="option-btn selected" data-level="intermediate">Intermédiaire</button>
+                <button class="option-btn" data-level="advanced">Avancé</button>
+                <button class="option-btn" data-level="expert">Expert</button>
+            </div>
+        </div>
+
+        <!-- Conventions -->
+        <div class="settings-section">
+            <h2>Conventions d'enchères</h2>
+            <div class="option-group">
+                <button class="option-btn convention-btn selected" data-convention="sef">SEF (Standard Français)</button>
+                <button class="option-btn convention-btn" data-convention="sayc">SAYC</button>
+                <button class="option-btn convention-btn" data-convention="2over1">2/1 Game Forcing</button>
+                <button class="option-btn convention-btn" data-convention="acol">Acol</button>
+                <button class="option-btn convention-btn" data-convention="standard">Standard American</button>
+            </div>
+        </div>
+
+        <!-- Scoring -->
+        <div class="settings-section">
+            <h2>Mode de score</h2>
+            <div class="option-group">
+                <button class="option-btn scoring-btn selected" data-scoring="duplicate">Duplicate</button>
+                <button class="option-btn scoring-btn" data-scoring="rubber">Rubber</button>
+            </div>
+        </div>
+
+        <button id="start-game-btn" class="primary-btn">Commencer la partie</button>
+    </div>
+</div>
+
+<!-- ==================== GAME SCREEN ==================== -->
+<div id="game-screen" class="screen">
+    <div class="game-layout">
+        <!-- Info Bar -->
+        <div class="info-bar">
+            <div class="info-item"><span class="info-label">Donneur:</span> <span id="dealer-display">-</span></div>
+            <div class="info-item"><span class="info-label">Vulnérabilité:</span> <span id="vuln-display">-</span></div>
+            <div class="info-item"><span class="info-label">Contrat:</span> <span id="contract-display">-</span></div>
+            <div class="info-item"><span class="info-label">Levées NS:</span> <span id="tricks-ns">0</span></div>
+            <div class="info-item"><span class="info-label">Levées EO:</span> <span id="tricks-ew">0</span></div>
+            <button id="settings-btn" class="icon-btn" title="Paramètres">⚙</button>
+        </div>
+
+        <!-- Table -->
+        <div class="table-area">
+            <!-- North Hand -->
+            <div class="hand-area hand-north" id="hand-north">
+                <div class="player-label" id="label-north">Nord (IA)</div>
+                <div class="cards-container" id="cards-north"></div>
+            </div>
+
+            <!-- West Hand -->
+            <div class="hand-area hand-west" id="hand-west">
+                <div class="player-label" id="label-west">Ouest (IA)</div>
+                <div class="cards-container cards-vertical" id="cards-west"></div>
+            </div>
+
+            <!-- Center Area (Trick / Bidding) -->
+            <div class="center-area">
+                <!-- Bidding Panel -->
+                <div id="bidding-panel" class="panel hidden">
+                    <h3>Enchères</h3>
+                    <div id="bidding-history" class="bidding-history">
+                        <div class="bid-header">
+                            <span>Ouest</span><span>Nord</span><span>Est</span><span>Sud</span>
+                        </div>
+                        <div id="bid-history-rows"></div>
+                    </div>
+                    <div id="bidding-controls" class="bidding-controls">
+                        <div class="bid-level-row">
+                            <button class="bid-level-btn" data-level="1">1</button>
+                            <button class="bid-level-btn" data-level="2">2</button>
+                            <button class="bid-level-btn" data-level="3">3</button>
+                            <button class="bid-level-btn" data-level="4">4</button>
+                            <button class="bid-level-btn" data-level="5">5</button>
+                            <button class="bid-level-btn" data-level="6">6</button>
+                            <button class="bid-level-btn" data-level="7">7</button>
+                        </div>
+                        <div class="bid-suit-row">
+                            <button class="bid-suit-btn" data-suit="C">♣</button>
+                            <button class="bid-suit-btn" data-suit="D"><span class="red">♦</span></button>
+                            <button class="bid-suit-btn" data-suit="H"><span class="red">♥</span></button>
+                            <button class="bid-suit-btn" data-suit="S">♠</button>
+                            <button class="bid-suit-btn" data-suit="NT">SA</button>
+                        </div>
+                        <div class="bid-action-row">
+                            <button class="bid-action-btn" id="bid-pass">Passe</button>
+                            <button class="bid-action-btn" id="bid-double">Contre</button>
+                            <button class="bid-action-btn" id="bid-redouble">Surcontre</button>
+                            <button class="bid-action-btn primary-btn" id="bid-confirm" disabled>Enchérir</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trick Area -->
+                <div id="trick-area" class="trick-area hidden">
+                    <div class="trick-card trick-north" id="trick-north"></div>
+                    <div class="trick-card trick-west" id="trick-west"></div>
+                    <div class="trick-card trick-east" id="trick-east"></div>
+                    <div class="trick-card trick-south" id="trick-south"></div>
+                </div>
+
+                <!-- Message Area -->
+                <div id="message-area" class="message-area"></div>
+            </div>
+
+            <!-- East Hand -->
+            <div class="hand-area hand-east" id="hand-east">
+                <div class="player-label" id="label-east">Est (IA)</div>
+                <div class="cards-container cards-vertical" id="cards-east"></div>
+            </div>
+
+            <!-- South Hand -->
+            <div class="hand-area hand-south" id="hand-south">
+                <div class="player-label" id="label-south">Sud (Vous)</div>
+                <div class="cards-container" id="cards-south"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== SCORE SCREEN ==================== -->
+<div id="score-screen" class="screen">
+    <div class="score-container">
+        <h2>Résultat de la donne</h2>
+        <div id="score-details"></div>
+        <div class="score-actions">
+            <button id="next-deal-btn" class="primary-btn">Donne suivante</button>
+            <button id="back-settings-btn" class="secondary-btn">Retour aux paramètres</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/bridge.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
