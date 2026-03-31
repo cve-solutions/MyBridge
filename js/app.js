@@ -453,19 +453,21 @@ class BridgeApp {
     // ==================== CARD PLAY ====================
 
     _showTrickArea() {
+        // Mark trick area as visible (used as a state flag)
         document.getElementById('trick-area').classList.remove('hidden');
         this._clearTrickDisplay();
     }
 
     _hideTrickArea() {
         document.getElementById('trick-area').classList.add('hidden');
+        this._clearTrickDisplay();
     }
 
     _clearTrickDisplay() {
         for (const pos of ['north', 'south', 'east', 'west']) {
             const el = document.getElementById(`trick-${pos}`);
             el.innerHTML = '';
-            el.className = 'trick-card empty';
+            el.className = `trick-card trick-${pos} empty`;
         }
     }
 
@@ -473,7 +475,7 @@ class BridgeApp {
         const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
         const el = document.getElementById(`trick-${posName}`);
         el.innerHTML = `<span class="card-rank">${RANK_DISPLAY[card.rank]}</span><span class="card-suit">${SUIT_SYMBOLS[card.suit]}</span>`;
-        el.className = 'trick-card' + (card.isRed ? ' red-card' : '');
+        el.className = `trick-card trick-${posName}` + (card.isRed ? ' red-card' : '');
     }
 
     _processPlay() {
