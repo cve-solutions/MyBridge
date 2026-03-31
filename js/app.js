@@ -183,7 +183,7 @@ class BridgeApp {
             cardEl.className = 'card';
 
             if (showCards) {
-                cardEl.innerHTML = `<span class="card-rank">${RANK_DISPLAY[card.rank]}</span><span class="card-suit">${SUIT_SYMBOLS[card.suit]}</span>`;
+                cardEl.innerHTML = this._cardHTML(card);
                 if (card.isRed) cardEl.classList.add('red-card');
 
                 if (isHumanTurn && playableCards.some(c => c.equals(card))) {
@@ -467,15 +467,25 @@ class BridgeApp {
         for (const pos of ['north', 'south', 'east', 'west']) {
             const el = document.getElementById(`trick-${pos}`);
             el.innerHTML = '';
-            el.className = `trick-card trick-${pos} empty`;
+            el.classList.add('empty');
+            el.classList.remove('red-card');
         }
     }
 
     _displayTrickCard(pos, card) {
         const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
         const el = document.getElementById(`trick-${posName}`);
-        el.innerHTML = `<span class="card-rank">${RANK_DISPLAY[card.rank]}</span><span class="card-suit">${SUIT_SYMBOLS[card.suit]}</span>`;
-        el.className = `trick-card trick-${posName}` + (card.isRed ? ' red-card' : '');
+        el.innerHTML = this._cardHTML(card);
+        el.classList.remove('empty');
+        el.classList.toggle('red-card', card.isRed);
+    }
+
+    _cardHTML(card) {
+        const r = RANK_DISPLAY[card.rank];
+        const s = SUIT_SYMBOLS[card.suit];
+        return `<div class="card-tl"><span>${r}</span><span>${s}</span></div>` +
+               `<div class="card-center">${s}</div>` +
+               `<div class="card-br"><span>${r}</span><span>${s}</span></div>`;
     }
 
     _processPlay() {

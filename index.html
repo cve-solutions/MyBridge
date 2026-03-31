@@ -96,16 +96,12 @@
             <div class="hand-area hand-north" id="hand-north">
                 <div class="player-label" id="label-north">Nord (IA)</div>
                 <div class="cards-container" id="cards-north"></div>
-                <div class="trick-card trick-north empty" id="trick-north"></div>
             </div>
 
             <!-- West Hand -->
             <div class="hand-area hand-west" id="hand-west">
                 <div class="player-label" id="label-west">Ouest (IA)</div>
-                <div class="hand-west-inner">
-                    <div class="cards-container cards-vertical" id="cards-west"></div>
-                    <div class="trick-card trick-west empty" id="trick-west"></div>
-                </div>
+                <div class="cards-container cards-vertical" id="cards-west"></div>
             </div>
 
             <!-- Center Area (Trick / Bidding) -->
@@ -145,8 +141,13 @@
                     </div>
                 </div>
 
-                <!-- Trick visibility toggle (hidden div, no visual) -->
-                <div id="trick-area" class="hidden"></div>
+                <!-- Trick Area -->
+                <div id="trick-area" class="trick-area hidden">
+                    <div class="trick-card trick-north empty" id="trick-north"></div>
+                    <div class="trick-card trick-west empty" id="trick-west"></div>
+                    <div class="trick-card trick-east empty" id="trick-east"></div>
+                    <div class="trick-card trick-south empty" id="trick-south"></div>
+                </div>
 
                 <!-- Message Area -->
                 <div id="message-area" class="message-area"></div>
@@ -155,16 +156,12 @@
             <!-- East Hand -->
             <div class="hand-area hand-east" id="hand-east">
                 <div class="player-label" id="label-east">Est (IA)</div>
-                <div class="hand-east-inner">
-                    <div class="trick-card trick-east empty" id="trick-east"></div>
-                    <div class="cards-container cards-vertical" id="cards-east"></div>
-                </div>
+                <div class="cards-container cards-vertical" id="cards-east"></div>
             </div>
 
             <!-- South Hand -->
             <div class="hand-area hand-south" id="hand-south">
                 <div class="player-label" id="label-south">Sud (Vous)</div>
-                <div class="trick-card trick-south empty" id="trick-south"></div>
                 <div class="cards-container" id="cards-south"></div>
             </div>
         </div>
