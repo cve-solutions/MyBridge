@@ -6,14 +6,14 @@ class BridgeApp {
             seat: 'S',
             level: 'intermediate',
             convention: 'sef',
-            scoring: 'duplicate'
+            scoring: 'duplicate',
+            trickDelay: 2
         };
         this.gameState = null;
         this.ai = null;
         this.selectedBidLevel = null;
         this.selectedBidSuit = null;
         this.aiDelay = 800;
-        this.trickClearDelay = 1200;
 
         this._initUI();
         this._loadUserSettings();
@@ -57,6 +57,17 @@ class BridgeApp {
                 this.settings.scoring = el.dataset.scoring;
             });
         });
+
+        // Trick delay slider
+        const slider = document.getElementById('trick-delay-slider');
+        const sliderValue = document.getElementById('trick-delay-value');
+        if (slider) {
+            slider.addEventListener('input', () => {
+                const val = parseFloat(slider.value);
+                this.settings.trickDelay = val;
+                sliderValue.textContent = val.toFixed(1) + 's';
+            });
+        }
 
         // Convention double-click info
         document.querySelectorAll('[data-convention]').forEach(el => {
@@ -608,7 +619,7 @@ class BridgeApp {
                     // Next trick
                     this._processPlay();
                 }
-            }, this.trickClearDelay);
+            }, this.settings.trickDelay * 1000);
         } else {
             // Next player in same trick - add delay so each card is visible
             const nextPlayer = gs.currentTrick.currentPlayer;
@@ -716,6 +727,13 @@ class BridgeApp {
         document.querySelectorAll('[data-scoring]').forEach(el => {
             el.classList.toggle('selected', el.dataset.scoring === this.settings.scoring);
         });
+        // Trick delay
+        const slider = document.getElementById('trick-delay-slider');
+        const sliderValue = document.getElementById('trick-delay-value');
+        if (slider && this.settings.trickDelay) {
+            slider.value = this.settings.trickDelay;
+            sliderValue.textContent = parseFloat(this.settings.trickDelay).toFixed(1) + 's';
+        }
     }
 
     async _saveUserSettings() {
