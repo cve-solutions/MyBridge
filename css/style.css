@@ -161,6 +161,72 @@ body {
     color: #fff;
 }
 
+.hint-text {
+    font-size: 0.8em;
+    color: #666;
+    margin-bottom: 8px;
+    font-style: italic;
+}
+
+/* Convention Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-box {
+    background: #1e2a3a;
+    border: 1px solid rgba(233,69,96,0.3);
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 550px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-box h3 {
+    color: #e94560;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.modal-box p {
+    color: #ccc;
+    line-height: 1.6;
+    margin-bottom: 10px;
+    font-size: 0.95em;
+}
+
+.modal-box ul {
+    color: #bbb;
+    padding-left: 20px;
+    margin-bottom: 12px;
+}
+
+.modal-box ul li {
+    margin-bottom: 5px;
+    line-height: 1.5;
+    font-size: 0.9em;
+}
+
+.modal-box .primary-btn {
+    margin-top: 15px;
+}
+
 .primary-btn {
     display: block;
     width: 100%;
@@ -256,7 +322,7 @@ body {
 .table-area {
     flex: 1;
     display: grid;
-    grid-template-columns: 200px 1fr 200px;
+    grid-template-columns: minmax(100px, 1fr) 3fr minmax(100px, 1fr);
     grid-template-rows: auto 1fr auto;
     gap: 5px;
     padding: 10px;
@@ -266,7 +332,7 @@ body {
     min-height: 0;
 }
 
-/* Hand Areas */
+/* Hand Areas - grid positions set by JS via .seat-* classes */
 .hand-area {
     display: flex;
     flex-direction: column;
@@ -276,24 +342,29 @@ body {
     min-height: 0;
 }
 
-.hand-north {
-    grid-column: 2;
-    grid-row: 1;
+/* Screen positions (assigned dynamically) */
+.seat-top    { grid-column: 2; grid-row: 1; }
+.seat-left   { grid-column: 1; grid-row: 2; }
+.seat-right  { grid-column: 3; grid-row: 2; }
+.seat-bottom { grid-column: 2; grid-row: 3; }
+
+/* Left/Right hands use vertical card layout */
+.seat-left .cards-container,
+.seat-right .cards-container {
+    flex-direction: column;
+    align-items: center;
+    min-height: auto;
 }
 
-.hand-west {
-    grid-column: 1;
-    grid-row: 2;
+.seat-left .cards-container .card,
+.seat-right .cards-container .card {
+    margin-left: 0;
+    margin-top: -80px;
 }
 
-.hand-east {
-    grid-column: 3;
-    grid-row: 2;
-}
-
-.hand-south {
-    grid-column: 2;
-    grid-row: 3;
+.seat-left .cards-container .card:first-child,
+.seat-right .cards-container .card:first-child {
+    margin-top: 0;
 }
 
 .player-label {
@@ -413,33 +484,9 @@ body {
     border-color: #0f2870;
 }
 
-/* Legacy card-rank / card-suit kept for trick cards */
-.trick-card .card-rank {
-    font-weight: bold;
-    font-size: 1.3em;
-    line-height: 1.2;
-}
-
-.trick-card .card-suit {
-    font-size: 1.5em;
-    line-height: 1.2;
-}
-
-/* Vertical cards (East/West) */
-.cards-vertical {
-    flex-direction: column;
-    align-items: center;
-    min-height: auto;
-}
-
-.cards-vertical .card {
-    margin-left: 0;
-    margin-top: -80px;
-    width: 82px;
-    height: 120px;
-}
-
-.cards-vertical .card:first-child {
+/* Horizontal cards overlap */
+.seat-top .cards-container .card,
+.seat-bottom .cards-container .card {
     margin-top: 0;
 }
 
@@ -633,8 +680,6 @@ body {
     line-height: 1;
 }
 
-/* Legacy card-rank / card-suit removed - using corner layout */
-
 .trick-card.red-card {
     color: #e74c3c;
 }
@@ -646,11 +691,11 @@ body {
     color: transparent;
 }
 
-/* Position each trick card toward its player */
-.trick-north { top: 10%; left: 50%; transform: translateX(-50%); }
-.trick-south { bottom: 10%; left: 50%; transform: translateX(-50%); }
-.trick-west  { left: 15%; top: 50%; transform: translateY(-50%); }
-.trick-east  { right: 15%; top: 50%; transform: translateY(-50%); }
+/* Trick card screen positions (assigned by JS) */
+.trick-pos-top    { top: 8%;    left: 50%;  transform: translateX(-50%); }
+.trick-pos-bottom { bottom: 8%; left: 50%;  transform: translateX(-50%); }
+.trick-pos-left   { left: 18%;  top: 50%;   transform: translateY(-50%); }
+.trick-pos-right  { right: 18%; top: 50%;   transform: translateY(-50%); }
 
 /* Message Area */
 .message-area {
@@ -737,7 +782,7 @@ body {
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 768px) {
     .table-area {
-        grid-template-columns: 100px 1fr 100px;
+        grid-template-columns: 80px 1fr 80px;
     }
 
     .cards-container .card {
@@ -747,7 +792,8 @@ body {
         margin-left: -18px;
     }
 
-    .cards-vertical .card {
+    .seat-left .cards-container .card,
+    .seat-right .cards-container .card {
         margin-top: -55px;
         margin-left: 0;
         width: 55px;
@@ -760,26 +806,9 @@ body {
         font-size: 1em;
     }
 
-    .settings-container {
-        padding: 20px;
-    }
-
-    .title {
-        font-size: 1.8em;
-    }
-
-    .seat-table {
-        width: 220px;
-        height: 220px;
-    }
-
-    #bidding-panel {
-        padding: 10px;
-    }
-
-    .bid-level-btn, .bid-suit-btn {
-        width: 36px;
-        height: 32px;
-        font-size: 0.9em;
-    }
+    .settings-container { padding: 20px; }
+    .title { font-size: 1.8em; }
+    .seat-table { width: 220px; height: 220px; }
+    #bidding-panel { padding: 10px; }
+    .bid-level-btn, .bid-suit-btn { width: 36px; height: 32px; font-size: 0.9em; }
 }

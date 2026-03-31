@@ -58,6 +58,14 @@ class BridgeApp {
             });
         });
 
+        // Convention double-click info
+        document.querySelectorAll('[data-convention]').forEach(el => {
+            el.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                this._showConventionInfo(el.dataset.convention);
+            });
+        });
+
         // Start game
         document.getElementById('start-game-btn').addEventListener('click', () => this._startGame());
 
@@ -102,8 +110,49 @@ class BridgeApp {
         this._saveUserSettings();
         this.gameState = new GameState(this.settings);
         this.ai = new BridgeAI(this.settings);
+        this._layoutTable();
         this._showScreen('game-screen');
         this._startDeal();
+    }
+
+    // ==================== DYNAMIC TABLE LAYOUT ====================
+
+    // Maps bridge positions (N/E/S/W) to screen positions (bottom/top/left/right)
+    // Human player is always at the bottom of the screen
+    _getScreenMap() {
+        // Clockwise from the human: human, LHO, partner, RHO
+        // Screen: bottom, left, top, right
+        const order = { S: ['S','W','N','E'], N: ['N','E','S','W'], E: ['E','S','W','N'], W: ['W','N','E','S'] };
+        const seats = order[this.settings.seat];
+        return {
+            [seats[0]]: 'bottom',
+            [seats[1]]: 'left',
+            [seats[2]]: 'top',
+            [seats[3]]: 'right'
+        };
+    }
+
+    _layoutTable() {
+        const map = this._getScreenMap();
+        this._screenMap = map;
+
+        // Assign screen position classes to hand areas
+        for (const pos of POSITIONS) {
+            const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
+            const handEl = document.getElementById(`hand-${posName}`);
+            // Remove old seat classes
+            handEl.classList.remove('seat-top', 'seat-bottom', 'seat-left', 'seat-right');
+            // Add new one
+            handEl.classList.add(`seat-${map[pos]}`);
+        }
+
+        // Assign screen position classes to trick cards
+        for (const pos of POSITIONS) {
+            const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
+            const trickEl = document.getElementById(`trick-${posName}`);
+            trickEl.classList.remove('trick-pos-top', 'trick-pos-bottom', 'trick-pos-left', 'trick-pos-right');
+            trickEl.classList.add(`trick-pos-${map[pos]}`);
+        }
     }
 
     _startDeal() {
@@ -192,7 +241,6 @@ class BridgeApp {
                 }
             } else {
                 cardEl.classList.add('face-down');
-                cardEl.innerHTML = '<span class="card-rank">&nbsp;</span><span class="card-suit">&nbsp;</span>';
             }
 
             containerEl.appendChild(cardEl);
@@ -210,6 +258,15 @@ class BridgeApp {
                 text += ' (Vous)';
             } else {
                 text += ' (IA)';
+            }
+
+            // Show Declarer / Dummy role during play
+            if (gs.phase === 'playing' && gs.contract) {
+                if (pos === gs.declarerPos) {
+                    text += ' - Déclarant';
+                } else if (pos === gs.dummyPos) {
+                    text += ' - Mort';
+                }
             }
 
             label.textContent = text;
@@ -464,8 +521,8 @@ class BridgeApp {
     }
 
     _clearTrickDisplay() {
-        for (const pos of ['north', 'south', 'east', 'west']) {
-            const el = document.getElementById(`trick-${pos}`);
+        for (const posName of ['north', 'south', 'east', 'west']) {
+            const el = document.getElementById(`trick-${posName}`);
             el.innerHTML = '';
             el.classList.add('empty');
             el.classList.remove('red-card');
@@ -704,6 +761,101 @@ class BridgeApp {
             // ignore
         }
         window.location.href = '/';
+    }
+
+    // ==================== CONVENTION INFO ====================
+
+    _showConventionInfo(convention) {
+        const info = this._conventionDescriptions[convention];
+        if (!info) return;
+        document.getElementById('convention-modal-title').textContent = info.title;
+        document.getElementById('convention-modal-body').innerHTML = info.html;
+        document.getElementById('convention-modal').classList.remove('hidden');
+    }
+
+    get _conventionDescriptions() {
+        return {
+            sef: {
+                title: 'SEF - Standard Enseignement Fran\u00e7ais',
+                html: `
+                    <p>Le SEF est le syst\u00e8me d'ench\u00e8res officiel de la F\u00e9d\u00e9ration Fran\u00e7aise de Bridge. C'est le syst\u00e8me le plus r\u00e9pandu en France.</p>
+                    <p><strong>Principes cl\u00e9s :</strong></p>
+                    <ul>
+                        <li><strong>Majeure 5e</strong> : L'ouverture de 1\u2665 ou 1\u2660 promet au moins 5 cartes</li>
+                        <li><strong>1SA = 15-17 HCP</strong> : Main \u00e9quilibr\u00e9e (4-3-3-3, 4-4-3-2 ou 5-3-3-2)</li>
+                        <li><strong>2\u2663 fort</strong> : Ouverture artificielle et forcing, 20+ HCP ou 8\u00bd lev\u00e9es de jeu</li>
+                        <li><strong>2\u2666 multi</strong> : Bicolore majeur faible (6 cartes dans une majeure, 6-10 HCP)</li>
+                        <li><strong>Stayman</strong> : 2\u2663 sur 1SA pour chercher un fit majeur 4-4</li>
+                        <li><strong>Texas</strong> : 2\u2666 = transfert \u2665, 2\u2665 = transfert \u2660</li>
+                        <li><strong>R\u00e9ponse au palier de 2</strong> : Changement de couleur forcing (11+ HCP)</li>
+                    </ul>
+                `
+            },
+            sayc: {
+                title: 'SAYC - Standard American Yellow Card',
+                html: `
+                    <p>Le SAYC est le syst\u00e8me standard utilis\u00e9 par d\u00e9faut dans les tournois en ligne am\u00e9ricains. Simple et efficace.</p>
+                    <p><strong>Principes cl\u00e9s :</strong></p>
+                    <ul>
+                        <li><strong>Majeure 5e</strong> : 1\u2665/1\u2660 promettent 5+ cartes</li>
+                        <li><strong>1SA = 15-17 HCP</strong> : Main \u00e9quilibr\u00e9e</li>
+                        <li><strong>2\u2663 fort</strong> : Artificiel, forcing de manche (22+ HCP)</li>
+                        <li><strong>2\u2666/2\u2665/2\u2660 faible</strong> : 6 cartes, 5-11 HCP (barrage)</li>
+                        <li><strong>Stayman et Texas</strong> : Sur l'ouverture de 1SA</li>
+                        <li><strong>Soutien limit\u00e9</strong> : Le soutien simple (1\u2660-2\u2660) = 6-10 points</li>
+                        <li><strong>R\u00e9ponse 1SA</strong> : 6-10 HCP, forcing un tour</li>
+                    </ul>
+                `
+            },
+            '2over1': {
+                title: '2/1 Game Forcing',
+                html: `
+                    <p>Syst\u00e8me am\u00e9ricain avanc\u00e9. Toute r\u00e9ponse au palier de 2 dans une nouvelle couleur est forcing de manche.</p>
+                    <p><strong>Principes cl\u00e9s :</strong></p>
+                    <ul>
+                        <li><strong>R\u00e9ponse 2 sur 1</strong> : Un changement de couleur au palier de 2 (ex: 1\u2660 - 2\u2663) est forcing de manche (12+ HCP)</li>
+                        <li><strong>1SA forcing</strong> : La r\u00e9ponse de 1SA sur 1\u2665/1\u2660 est forcing un tour (6-12 HCP)</li>
+                        <li><strong>Majeure 5e</strong> et <strong>1SA = 15-17</strong></li>
+                        <li><strong>Bergen raises</strong> : 3\u2663 = soutien faible (7-9), 3\u2666 = soutien limite (10-12)</li>
+                        <li><strong>Avantage</strong> : Les ench\u00e8res de d\u00e9veloppement sont plus pr\u00e9cises car le palier de manche est garanti</li>
+                        <li><strong>Inconv\u00e9nient</strong> : Plus complexe, n\u00e9cessite un bon partenariat</li>
+                    </ul>
+                `
+            },
+            acol: {
+                title: 'Acol',
+                html: `
+                    <p>Syst\u00e8me britannique tr\u00e8s populaire au Royaume-Uni. Naturel et flexible.</p>
+                    <p><strong>Principes cl\u00e9s :</strong></p>
+                    <ul>
+                        <li><strong>Majeure 4e</strong> : L'ouverture de 1\u2665/1\u2660 ne promet que 4 cartes</li>
+                        <li><strong>1SA faible = 12-14 HCP</strong> : Main \u00e9quilibr\u00e9e (diff\u00e9rent des autres syst\u00e8mes !)</li>
+                        <li><strong>2\u2663 fort artificiel</strong> : 23+ HCP ou 9\u00bd lev\u00e9es de jeu</li>
+                        <li><strong>Acol Two Bids</strong> : 2\u2666/2\u2665/2\u2660 = main forte de 8+ lev\u00e9es de jeu dans la couleur nomm\u00e9e</li>
+                        <li><strong>Blackwood</strong> : 4SA demande les As</li>
+                        <li><strong>Stayman</strong> : 2\u2663 sur 1SA</li>
+                        <li><strong>Particularit\u00e9</strong> : Le 1SA faible donne un avantage comp\u00e9titif en attaque</li>
+                    </ul>
+                `
+            },
+            standard: {
+                title: 'Standard American',
+                html: `
+                    <p>Le syst\u00e8me de base am\u00e9ricain, proche du SAYC mais avec quelques diff\u00e9rences.</p>
+                    <p><strong>Principes cl\u00e9s :</strong></p>
+                    <ul>
+                        <li><strong>Majeure 5e</strong> : 1\u2665/1\u2660 promettent 5+ cartes</li>
+                        <li><strong>1SA = 15-17 HCP</strong> : Main \u00e9quilibr\u00e9e</li>
+                        <li><strong>Ouverture mineure</strong> : 1\u2663 = 3+ cartes, 1\u2666 = 4+ cartes (parfois 3)</li>
+                        <li><strong>2\u2663 fort</strong> : Artificiel et forcing</li>
+                        <li><strong>2\u2666/2\u2665/2\u2660 faible</strong> : 6 cartes, 5-11 HCP</li>
+                        <li><strong>Stayman et Texas</strong> : Conventions standard sur 1SA</li>
+                        <li><strong>Limit raise</strong> : Soutien au palier de 3 = invitationnel (11-12 points avec fit)</li>
+                        <li><strong>Convient aux</strong> : D\u00e9butants et joueurs occasionnels</li>
+                    </ul>
+                `
+            }
+        };
     }
 }
 
