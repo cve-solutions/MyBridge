@@ -140,6 +140,17 @@
             opacity: 0.3;
             letter-spacing: 8px;
         }
+
+        .version-badge {
+            position: fixed;
+            bottom: 8px;
+            right: 12px;
+            font-size: 0.7em;
+            color: rgba(255,255,255,0.25);
+            z-index: 9999;
+            pointer-events: none;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -200,7 +211,11 @@
     </div>
 </div>
 
+<div class="version-badge" id="version-badge"></div>
+
 <script>
+    fetch('/version.json').then(r=>r.json()).then(d=>{document.getElementById('version-badge').textContent='v'+d.version}).catch(()=>{});
+
     function showTab(tab) {
         document.getElementById('error-msg').classList.remove('visible');
         document.getElementById('success-msg').classList.remove('visible');

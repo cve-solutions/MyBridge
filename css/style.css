@@ -656,6 +656,18 @@ body {
 .score-line .score-positive { color: #2ecc71; }
 .score-line .score-negative { color: #e74c3c; }
 
+/* ==================== VERSION BADGE ==================== */
+.version-badge {
+    position: fixed;
+    bottom: 8px;
+    right: 12px;
+    font-size: 0.7em;
+    color: rgba(255,255,255,0.25);
+    z-index: 9999;
+    pointer-events: none;
+    font-family: monospace;
+}
+
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 768px) {
     .table-area {

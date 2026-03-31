@@ -86,15 +86,8 @@ do_update() {
     cd "$APP_DIR/server"
     sudo -u "$APP_USER" npm install --production
 
-    log_info "Mise à jour des fichiers publics..."
-    rsync -a --delete \
-        --exclude='server/' \
-        --exclude='.git/' \
-        --exclude='setup.sh' \
-        --exclude='nginx/' \
-        "$APP_DIR/" "$APP_DIR/public/"
-    # Actually, public IS the app dir for static files, NGINX points to it
-    # We just need to make sure static files are in place
+    log_info "Mise à jour des permissions..."
+    chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 
     log_info "Rechargement NGINX..."
     nginx -t && systemctl reload nginx
@@ -104,6 +97,12 @@ do_update() {
 
     # Cleanup old backups (keep last 10)
     ls -t "$BACKUP_DIR"/mybridge_*.db 2>/dev/null | tail -n +11 | xargs -r rm --
+
+    # Show version
+    if [[ -f "$APP_DIR/version.json" ]]; then
+        APP_VERSION=$(grep -oP '"version":\s*"\K[^"]+' "$APP_DIR/version.json")
+        log_ok "Version: $APP_VERSION"
+    fi
 
     log_ok "=========================================="
     log_ok "  Mise à jour terminée avec succès !"
@@ -127,6 +126,7 @@ install_system_deps() {
         certbot \
         python3-certbot-nginx \
         sqlite3 \
+        openssl \
         ufw \
         fail2ban \
         rsync \
@@ -485,6 +485,10 @@ main() {
     log_ok "  Installation terminée avec succès !"
     log_ok "=========================================="
     echo ""
+    if [[ -f "$APP_DIR/version.json" ]]; then
+        APP_VERSION=$(grep -oP '"version":\s*"\K[^"]+' "$APP_DIR/version.json")
+        echo -e "  ${GREEN}Version:${NC}    v${APP_VERSION}"
+    fi
     echo -e "  ${GREEN}URL:${NC}        https://${DOMAIN}"
     echo -e "  ${GREEN}Service:${NC}    systemctl status ${SERVICE_NAME}"
     echo -e "  ${GREEN}Logs:${NC}       journalctl -u ${SERVICE_NAME} -f"
