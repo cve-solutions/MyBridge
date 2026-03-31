@@ -590,22 +590,26 @@ body {
     margin-bottom: 6px;
 }
 
-/* West: card to the right of hand */
-.hand-west {
-    flex-direction: column;
+/* West: card to the right of hand (toward center) */
+.hand-west-inner {
+    display: flex;
+    flex-direction: row;
     align-items: center;
+    gap: 0;
 }
-.hand-west .trick-card:not(.empty) {
-    margin-top: 8px;
+.hand-west-inner .trick-card:not(.empty) {
+    margin-left: 10px;
 }
 
-/* East: card to the left of hand */
-.hand-east {
-    flex-direction: column;
+/* East: card to the left of hand (toward center) */
+.hand-east-inner {
+    display: flex;
+    flex-direction: row;
     align-items: center;
+    gap: 0;
 }
-.hand-east .trick-card:not(.empty) {
-    margin-top: 8px;
+.hand-east-inner .trick-card:not(.empty) {
+    margin-right: 10px;
 }
 
 /* Message Area */
