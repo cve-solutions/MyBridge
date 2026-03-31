@@ -16,6 +16,7 @@ class BridgeApp {
         this.trickClearDelay = 1200;
 
         this._initUI();
+        this._loadUserSettings();
     }
 
     // ==================== UI INITIALIZATION ====================
@@ -63,6 +64,12 @@ class BridgeApp {
         // Settings button (back to settings)
         document.getElementById('settings-btn').addEventListener('click', () => this._showScreen('settings-screen'));
 
+        // Logout button
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => this._logout());
+        }
+
         // Bidding controls
         document.querySelectorAll('.bid-level-btn').forEach(el => {
             el.addEventListener('click', () => this._selectBidLevel(parseInt(el.dataset.level)));
@@ -92,6 +99,7 @@ class BridgeApp {
     // ==================== GAME FLOW ====================
 
     _startGame() {
+        this._saveUserSettings();
         this.gameState = new GameState(this.settings);
         this.ai = new BridgeAI(this.settings);
         this._showScreen('game-screen');
@@ -586,6 +594,8 @@ class BridgeApp {
         html += `<div class="score-line"><span>Total cumulé EO</span><span>${gs.totalScore.EW}</span></div>`;
 
         detailsEl.innerHTML = html;
+
+        this._saveGameResult();
     }
 
     // ==================== MESSAGES ====================
@@ -595,6 +605,84 @@ class BridgeApp {
         el.textContent = text;
         el.classList.add('visible');
         setTimeout(() => el.classList.remove('visible'), 3000);
+    }
+
+    // ==================== USER SETTINGS API ====================
+
+    async _loadUserSettings() {
+        try {
+            const res = await fetch('/api/settings');
+            if (!res.ok) return;
+            const settings = await res.json();
+            this.settings = { ...this.settings, ...settings };
+            this._applySettingsToUI();
+        } catch (e) {
+            // Offline or no server - use defaults
+        }
+    }
+
+    _applySettingsToUI() {
+        // Seat
+        document.querySelectorAll('.seat-pos').forEach(el => {
+            el.classList.toggle('selected', el.dataset.seat === this.settings.seat);
+        });
+        // Level
+        document.querySelectorAll('[data-level]').forEach(el => {
+            el.classList.toggle('selected', el.dataset.level === this.settings.level);
+        });
+        // Convention
+        document.querySelectorAll('[data-convention]').forEach(el => {
+            el.classList.toggle('selected', el.dataset.convention === this.settings.convention);
+        });
+        // Scoring
+        document.querySelectorAll('[data-scoring]').forEach(el => {
+            el.classList.toggle('selected', el.dataset.scoring === this.settings.scoring);
+        });
+    }
+
+    async _saveUserSettings() {
+        try {
+            await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.settings)
+            });
+        } catch (e) {
+            // Offline - settings saved locally only
+        }
+    }
+
+    async _saveGameResult() {
+        const gs = this.gameState;
+        if (!gs.contract) return;
+        const score = gs.getScore();
+        const declarerTeam = teamOf(gs.contract.declarer);
+        const suitStr = gs.contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[gs.contract.suit];
+        try {
+            await fetch('/api/games', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dealNumber: gs.dealNumber,
+                    contract: `${gs.contract.level}${suitStr}`,
+                    declarer: gs.contract.declarer,
+                    tricksMade: gs.tricksWon[declarerTeam],
+                    scoreNS: score.ns,
+                    scoreEW: score.ew
+                })
+            });
+        } catch (e) {
+            // Offline
+        }
+    }
+
+    async _logout() {
+        try {
+            await fetch('/api/logout', { method: 'POST' });
+        } catch (e) {
+            // ignore
+        }
+        window.location.href = '/';
     }
 }
 
