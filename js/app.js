@@ -6,14 +6,14 @@ class BridgeApp {
             seat: 'S',
             level: 'intermediate',
             convention: 'sef',
-            scoring: 'duplicate'
+            scoring: 'duplicate',
+            trickDelay: 2
         };
         this.gameState = null;
         this.ai = null;
         this.selectedBidLevel = null;
         this.selectedBidSuit = null;
         this.aiDelay = 800;
-        this.trickClearDelay = 1200;
 
         this._initUI();
         this._loadUserSettings();
@@ -58,6 +58,17 @@ class BridgeApp {
             });
         });
 
+        // Trick delay slider
+        const slider = document.getElementById('trick-delay-slider');
+        const sliderValue = document.getElementById('trick-delay-value');
+        if (slider) {
+            slider.addEventListener('input', () => {
+                const val = parseFloat(slider.value);
+                this.settings.trickDelay = val;
+                sliderValue.textContent = val.toFixed(1) + 's';
+            });
+        }
+
         // Convention double-click info
         document.querySelectorAll('[data-convention]').forEach(el => {
             el.addEventListener('dblclick', (e) => {
@@ -94,7 +105,25 @@ class BridgeApp {
 
         // Score screen
         document.getElementById('next-deal-btn').addEventListener('click', () => this._nextDeal());
+        document.getElementById('analyze-btn').addEventListener('click', () => this._showAnalysis());
         document.getElementById('back-settings-btn').addEventListener('click', () => this._showScreen('settings-screen'));
+
+        // Modal close buttons
+        document.getElementById('convention-close-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._closeModal('convention-modal');
+        });
+        document.getElementById('analysis-close-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._closeModal('analysis-modal');
+        });
+
+        // Close modals on overlay click
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) this._closeModal(modal.id);
+            });
+        });
     }
 
     // ==================== SCREEN MANAGEMENT ====================
@@ -608,7 +637,7 @@ class BridgeApp {
                     // Next trick
                     this._processPlay();
                 }
-            }, this.trickClearDelay);
+            }, this.settings.trickDelay * 1000);
         } else {
             // Next player in same trick - add delay so each card is visible
             const nextPlayer = gs.currentTrick.currentPlayer;
@@ -716,6 +745,13 @@ class BridgeApp {
         document.querySelectorAll('[data-scoring]').forEach(el => {
             el.classList.toggle('selected', el.dataset.scoring === this.settings.scoring);
         });
+        // Trick delay
+        const slider = document.getElementById('trick-delay-slider');
+        const sliderValue = document.getElementById('trick-delay-value');
+        if (slider && this.settings.trickDelay) {
+            slider.value = this.settings.trickDelay;
+            sliderValue.textContent = parseFloat(this.settings.trickDelay).toFixed(1) + 's';
+        }
     }
 
     async _saveUserSettings() {
@@ -763,6 +799,344 @@ class BridgeApp {
         window.location.href = '/';
     }
 
+    // ==================== MODAL HELPERS ====================
+
+    _openModal(id) {
+        const el = document.getElementById(id);
+        el.style.display = 'flex';
+        el.classList.remove('hidden');
+    }
+
+    _closeModal(id) {
+        const el = document.getElementById(id);
+        el.style.display = 'none';
+        el.classList.add('hidden');
+    }
+
+    // ==================== DEAL ANALYSIS ====================
+
+    _showAnalysis() {
+        const gs = this.gameState;
+        if (!gs) return;
+
+        let html = '';
+
+        // 1. Show all 4 hands
+        html += '<div class="analysis-section"><h4>Les 4 mains</h4>';
+        for (const pos of POSITIONS) {
+            const hand = gs.originalHands[pos];
+            if (!hand) continue;
+            const eval_ = evaluateHand(hand);
+            const label = POSITION_FR[pos] + (pos === gs.humanPos ? ' (Vous)' : ' (IA)');
+            html += `<p style="margin-bottom:2px"><strong>${label}</strong> — ${eval_.hcp} HCP, ${eval_.totalPoints} pts totaux`;
+            if (eval_.isBalanced) html += ', équilibrée';
+            html += '</p><div class="analysis-hand">';
+            for (const suit of ['S', 'H', 'D', 'C']) {
+                const cards = hand.filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+                const isRed = suit === 'H' || suit === 'D';
+                const sym = SUIT_SYMBOLS[suit];
+                const cardStr = cards.map(c => RANK_DISPLAY[c.rank]).join(' ');
+                html += `<span class="analysis-suit"><span class="suit-symbol" style="color:${isRed ? '#e74c3c' : '#fff'}">${sym}</span> ${cardStr || '—'}</span>`;
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // 2. Bidding sequence
+        if (gs.bidding && gs.bidding.bids.length > 0) {
+            html += '<div class="analysis-section"><h4>Séquence d\'enchères</h4>';
+            html += '<div class="analysis-bid-sequence">';
+            for (const bid of gs.bidding.bids) {
+                const label = POSITION_FR[bid.player];
+                html += `<span class="analysis-bid"><strong>${label}:</strong> ${bid.toString()}</span>`;
+            }
+            html += '</div>';
+
+            if (gs.contract) {
+                const c = gs.contract;
+                const suitStr = c.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[c.suit];
+                html += `<p class="analysis-comment">Contrat final: <strong>${c.level}${suitStr}</strong> par <strong>${POSITION_FR[c.declarer]}</strong>`;
+                if (c.doubled) html += ' contré';
+                if (c.redoubled) html += ' surcontré';
+                html += `<br>Mort: <strong>${POSITION_FR[c.dummy]}</strong></p>`;
+            }
+            html += '</div>';
+        }
+
+        // 3. Play analysis
+        if (gs.contract && gs.tricks.length > 0) {
+            const declarerTeam = teamOf(gs.contract.declarer);
+            const required = gs.contract.level + 6;
+            const made = gs.tricksWon[declarerTeam];
+            const diff = made - required;
+
+            html += '<div class="analysis-section"><h4>Résultat du jeu</h4>';
+            html += `<p class="analysis-comment">Levées requises: <strong>${required}</strong> — Réalisées: <strong>${made}</strong> — `;
+            if (diff >= 0) {
+                html += `<span style="color:#2ecc71">Contrat réussi${diff > 0 ? ` (+${diff} surlevée${diff > 1 ? 's' : ''})` : ''}</span>`;
+            } else {
+                html += `<span style="color:#e74c3c">Chute de ${-diff}</span>`;
+            }
+            html += '</p>';
+
+            // Trick by trick
+            html += '<h4 style="margin-top:12px">Levée par levée</h4>';
+            html += '<table style="width:100%; border-collapse:collapse; font-size:0.85em; color:#bbb">';
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.1)"><th style="padding:4px;text-align:left">#</th><th>Ouest</th><th>Nord</th><th>Est</th><th>Sud</th><th>Gagnant</th></tr>';
+            for (let i = 0; i < gs.tricks.length; i++) {
+                const trick = gs.tricks[i];
+                const winner = trick.getWinner();
+                const winTeam = teamOf(winner);
+                html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">';
+                html += `<td style="padding:3px"><strong>${i + 1}</strong></td>`;
+                for (const p of ['W', 'N', 'E', 'S']) {
+                    const card = trick.cards[p];
+                    if (card) {
+                        const isRed = card.isRed;
+                        const style = isRed ? 'color:#e74c3c' : 'color:#fff';
+                        const bold = p === winner ? 'font-weight:bold;text-decoration:underline' : '';
+                        html += `<td style="text-align:center;padding:3px;${style};${bold}">${card.toString()}</td>`;
+                    } else {
+                        html += '<td style="text-align:center;padding:3px">-</td>';
+                    }
+                }
+                html += `<td style="text-align:center;padding:3px;color:${winTeam === teamOf(gs.humanPos) ? '#2ecc71' : '#e74c3c'}">${POSITION_FR[winner]}</td>`;
+                html += '</tr>';
+            }
+            html += '</table></div>';
+        }
+
+        // 4. Score recap
+        if (gs.contract) {
+            const score = gs.getScore();
+            html += '<div class="analysis-section"><h4>Score</h4>';
+            for (const detail of score.details) {
+                const cls = detail.value >= 0 ? '#2ecc71' : '#e74c3c';
+                html += `<p class="analysis-comment">${detail.label}: <span style="color:${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></p>`;
+            }
+            html += '</div>';
+        }
+
+        // 5. Expert recommendations
+        html += this._generateExpertAdvice(gs);
+
+        document.getElementById('analysis-body').innerHTML = html;
+        this._openModal('analysis-modal');
+    }
+
+    _generateExpertAdvice(gs) {
+        const tips = [];
+        const humanPos = gs.humanPos;
+        const humanHand = gs.originalHands[humanPos];
+        if (!humanHand) return '';
+        const humanEval = evaluateHand(humanHand);
+        const partnerPos = partnerOf(humanPos);
+        const partnerHand = gs.originalHands[partnerPos];
+        const partnerEval = partnerHand ? evaluateHand(partnerHand) : null;
+        const combinedHCP = humanEval.hcp + (partnerEval ? partnerEval.hcp : 0);
+
+        // ---- Bidding advice ----
+        const humanBids = gs.bidding ? gs.bidding.bids.filter(b => b.player === humanPos && b.type === 'bid') : [];
+        const partnerBids = gs.bidding ? gs.bidding.bids.filter(b => b.player === partnerPos && b.type === 'bid') : [];
+
+        // Opening analysis
+        if (humanBids.length === 0 && humanEval.hcp >= 12) {
+            tips.push({
+                type: 'encheres',
+                icon: 'warning',
+                text: `Vous aviez ${humanEval.hcp} HCP et n'avez pas ouvert. Avec 12+ HCP, vous devriez ouvrir les ench\u00e8res.`
+            });
+        }
+
+        if (humanBids.length > 0 && humanBids[0].level === 1 && humanBids[0].suit !== 'NT') {
+            const openSuit = humanBids[0].suit;
+            if ((openSuit === 'H' || openSuit === 'S') && humanEval.suitCounts[openSuit] < 5) {
+                tips.push({
+                    type: 'encheres',
+                    icon: 'error',
+                    text: `Vous avez ouvert 1${SUIT_SYMBOLS[openSuit]} avec seulement ${humanEval.suitCounts[openSuit]} cartes. En majeure 5e, il faut 5+ cartes pour ouvrir d'une majeure.`
+                });
+            }
+        }
+
+        // NT opening check
+        if (humanEval.isBalanced && humanEval.hcp >= 15 && humanEval.hcp <= 17) {
+            const opened1NT = humanBids.length > 0 && humanBids[0].level === 1 && humanBids[0].suit === 'NT';
+            if (!opened1NT && humanBids.length > 0) {
+                tips.push({
+                    type: 'encheres',
+                    icon: 'info',
+                    text: `Avec ${humanEval.hcp} HCP et une main \u00e9quilibr\u00e9e, l'ouverture de 1SA \u00e9tait \u00e0 consid\u00e9rer.`
+                });
+            }
+        }
+
+        // Combined strength analysis
+        if (gs.contract && partnerEval) {
+            const required = gs.contract.level + 6;
+            const declarerTeam = teamOf(gs.contract.declarer);
+            const isOurContract = teamOf(humanPos) === declarerTeam;
+
+            if (isOurContract) {
+                // Check if right contract level
+                if (combinedHCP >= 25 && gs.contract.level < 3 && gs.contract.suit === 'NT') {
+                    tips.push({
+                        type: 'encheres',
+                        icon: 'info',
+                        text: `Avec ${combinedHCP} HCP combin\u00e9s, la manche (3SA ou 4 en majeure) \u00e9tait envisageable.`
+                    });
+                }
+                if (combinedHCP >= 33 && gs.contract.level < 6) {
+                    tips.push({
+                        type: 'encheres',
+                        icon: 'info',
+                        text: `Avec ${combinedHCP} HCP combin\u00e9s, un chelem (palier 6) \u00e9tait possible.`
+                    });
+                }
+
+                // Fit analysis
+                for (const suit of ['S', 'H']) {
+                    const fitCount = humanEval.suitCounts[suit] + (partnerEval ? partnerEval.suitCounts[suit] : 0);
+                    if (fitCount >= 8) {
+                        const playedInSuit = gs.contract.suit === suit;
+                        if (!playedInSuit && gs.contract.suit === 'NT') {
+                            tips.push({
+                                type: 'encheres',
+                                icon: 'info',
+                                text: `Vous aviez un fit de ${fitCount} cartes \u00e0 ${SUIT_SYMBOLS[suit]}. Un contrat en ${SUIT_SYMBOLS[suit]} aurait pu \u00eatre pr\u00e9f\u00e9rable \u00e0 SA.`
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Play advice ----
+        if (gs.contract && gs.tricks.length > 0) {
+            const declarerTeam = teamOf(gs.contract.declarer);
+            const isOurContract = teamOf(humanPos) === declarerTeam;
+            const trump = gs.contract.suit;
+
+            // Analyze each trick for the human's play
+            for (let i = 0; i < gs.tricks.length; i++) {
+                const trick = gs.tricks[i];
+                const humanCard = trick.cards[humanPos];
+                if (!humanCard) continue;
+
+                const winner = trick.getWinner();
+                const partnerCard = trick.cards[partnerPos];
+                const suitLed = trick.suitLed;
+
+                // Did human lead? Check opening lead
+                if (i === 0 && trick.leader === humanPos && !isOurContract) {
+                    // Defensive lead analysis
+                    if (trump === 'NT' && humanCard.suit) {
+                        const suitLen = humanEval.suitCounts[humanCard.suit];
+                        const longestSuit = humanEval.longestSuit;
+                        const longestLen = humanEval.suitCounts[longestSuit];
+                        if (suitLen < longestLen && longestLen >= 4) {
+                            tips.push({
+                                type: 'jeu',
+                                icon: 'info',
+                                text: `Lev\u00e9e 1 : Contre SA, privil\u00e9giez l'entame dans votre plus longue couleur (${SUIT_SYMBOLS[longestSuit]}, ${longestLen} cartes) pour \u00e9tablir vos lev\u00e9es de longueur.`
+                            });
+                        }
+                    }
+                }
+
+                // Trump not pulled early (declarer)
+                if (isOurContract && humanPos === gs.contract.declarer && trump !== 'NT' && i <= 2) {
+                    if (trick.leader === humanPos && humanCard.suit !== trump) {
+                        const trumpCount = gs.originalHands[humanPos].filter(c => c.suit === trump).length;
+                        if (trumpCount >= 5) {
+                            const adversaryTrumps = ['E', 'W', 'N', 'S']
+                                .filter(p => teamOf(p) !== declarerTeam)
+                                .some(p => gs.originalHands[p] && gs.originalHands[p].some(c => c.suit === trump));
+                            if (adversaryTrumps && i === 0) {
+                                tips.push({
+                                    type: 'jeu',
+                                    icon: 'info',
+                                    text: `En tant que d\u00e9clarant avec ${trumpCount} atouts, pensez \u00e0 faire tomber les atouts adverses t\u00f4t (jouer atout d\u00e8s que possible).`
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // General result advice
+            const required = gs.contract.level + 6;
+            const made = gs.tricksWon[declarerTeam];
+            const diff = made - required;
+
+            if (isOurContract && diff < 0) {
+                tips.push({
+                    type: 'general',
+                    icon: 'warning',
+                    text: `Le contrat a chut\u00e9 de ${-diff}. Avec ${combinedHCP} HCP combin\u00e9s, un contrat plus prudent aurait peut-\u00eatre \u00e9t\u00e9 pr\u00e9f\u00e9rable.`
+                });
+            }
+
+            if (!isOurContract && diff >= 0) {
+                tips.push({
+                    type: 'general',
+                    icon: 'info',
+                    text: `Les adversaires ont r\u00e9ussi leur contrat. Cherchez si une entame diff\u00e9rente ou un signal d\u00e9fensif aurait pu les mettre en difficult\u00e9.`
+                });
+            }
+
+            if (isOurContract && diff >= 2) {
+                tips.push({
+                    type: 'encheres',
+                    icon: 'info',
+                    text: `+${diff} surlevées ! Vous auriez pu ench\u00e9rir plus haut. Un contrat de ${gs.contract.level + Math.min(diff, 2)}${gs.contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[gs.contract.suit]} \u00e9tait peut-\u00eatre faisable.`
+                });
+            }
+        }
+
+        if (tips.length === 0) {
+            tips.push({
+                type: 'general',
+                icon: 'ok',
+                text: 'Bien jou\u00e9 ! Rien de particulier \u00e0 signaler sur cette donne.'
+            });
+        }
+
+        // Render
+        const iconMap = {
+            error: '\u274c',
+            warning: '\u26a0\ufe0f',
+            info: '\ud83d\udca1',
+            ok: '\u2705'
+        };
+
+        let html = '<div class="analysis-section"><h4>Recommandations de l\'expert</h4>';
+        const biddingTips = tips.filter(t => t.type === 'encheres');
+        const playTips = tips.filter(t => t.type === 'jeu');
+        const generalTips = tips.filter(t => t.type === 'general');
+
+        if (biddingTips.length) {
+            html += '<p style="color:#e94560;margin-bottom:6px"><strong>Ench\u00e8res</strong></p>';
+            for (const t of biddingTips) {
+                html += `<p class="analysis-comment">${iconMap[t.icon]} ${t.text}</p>`;
+            }
+        }
+        if (playTips.length) {
+            html += '<p style="color:#e94560;margin-bottom:6px;margin-top:10px"><strong>Jeu de la carte</strong></p>';
+            for (const t of playTips) {
+                html += `<p class="analysis-comment">${iconMap[t.icon]} ${t.text}</p>`;
+            }
+        }
+        if (generalTips.length) {
+            html += '<p style="color:#e94560;margin-bottom:6px;margin-top:10px"><strong>G\u00e9n\u00e9ral</strong></p>';
+            for (const t of generalTips) {
+                html += `<p class="analysis-comment">${iconMap[t.icon]} ${t.text}</p>`;
+            }
+        }
+        html += '</div>';
+        return html;
+    }
+
     // ==================== CONVENTION INFO ====================
 
     _showConventionInfo(convention) {
@@ -770,7 +1144,7 @@ class BridgeApp {
         if (!info) return;
         document.getElementById('convention-modal-title').textContent = info.title;
         document.getElementById('convention-modal-body').innerHTML = info.html;
-        document.getElementById('convention-modal').classList.remove('hidden');
+        this._openModal('convention-modal');
     }
 
     get _conventionDescriptions() {

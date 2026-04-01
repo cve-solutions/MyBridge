@@ -168,6 +168,57 @@ body {
     font-style: italic;
 }
 
+/* Slider */
+.slider-group {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    outline: none;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #e94560;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(233,69,96,0.4);
+    transition: box-shadow 0.2s;
+}
+
+.slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 15px rgba(233,69,96,0.6);
+}
+
+.slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #e94560;
+    cursor: pointer;
+    border: none;
+}
+
+.slider-value {
+    min-width: 40px;
+    text-align: center;
+    color: #e94560;
+    font-weight: bold;
+    font-size: 1.1em;
+    font-family: monospace;
+}
+
 /* Convention Modal */
 .modal-overlay {
     position: fixed;
@@ -223,8 +274,59 @@ body {
     font-size: 0.9em;
 }
 
+.modal-wide {
+    max-width: 700px;
+}
+
 .modal-box .primary-btn {
     margin-top: 15px;
+}
+
+.analysis-section {
+    margin-bottom: 18px;
+}
+
+.analysis-section h4 {
+    color: #e94560;
+    margin-bottom: 8px;
+    font-size: 1em;
+}
+
+.analysis-hand {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.analysis-suit {
+    font-size: 0.95em;
+}
+
+.analysis-suit .suit-symbol {
+    font-weight: bold;
+    margin-right: 2px;
+}
+
+.analysis-bid-sequence {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.analysis-bid {
+    background: rgba(255,255,255,0.08);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.analysis-comment {
+    color: #aaa;
+    font-size: 0.9em;
+    line-height: 1.5;
+    margin-bottom: 6px;
 }
 
 .primary-btn {
@@ -323,13 +425,14 @@ body {
     flex: 1;
     display: grid;
     grid-template-columns: minmax(100px, 1fr) 3fr minmax(100px, 1fr);
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: 1fr 2fr 1fr;
     gap: 5px;
     padding: 10px;
     background: radial-gradient(ellipse at center, #2d5a27 0%, #1e3d1a 60%, #152e12 100%);
     border: 8px solid #3a2a1a;
     box-shadow: inset 0 0 50px rgba(0,0,0,0.3);
     min-height: 0;
+    overflow: hidden;
 }
 
 /* Hand Areas - grid positions set by JS via .seat-* classes */
@@ -340,13 +443,14 @@ body {
     justify-content: center;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 /* Screen positions (assigned dynamically) */
-.seat-top    { grid-column: 2; grid-row: 1; }
-.seat-left   { grid-column: 1; grid-row: 2; }
-.seat-right  { grid-column: 3; grid-row: 2; }
-.seat-bottom { grid-column: 2; grid-row: 3; }
+.seat-top    { grid-column: 2; grid-row: 1; align-self: end; }
+.seat-left   { grid-column: 1; grid-row: 2; align-self: center; }
+.seat-right  { grid-column: 3; grid-row: 2; align-self: center; }
+.seat-bottom { grid-column: 2; grid-row: 3; align-self: start; }
 
 /* Left/Right hands use vertical card layout */
 .seat-left .cards-container,
@@ -498,7 +602,7 @@ body {
     align-items: center;
     justify-content: center;
     position: relative;
-    min-height: 300px;
+    min-height: 0;
 }
 
 /* Bidding Panel */

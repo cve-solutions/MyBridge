@@ -64,15 +64,6 @@
             </div>
         </div>
 
-        <!-- Convention Info Modal -->
-        <div id="convention-modal" class="modal-overlay hidden">
-            <div class="modal-box">
-                <h3 id="convention-modal-title"></h3>
-                <div id="convention-modal-body"></div>
-                <button class="primary-btn" onclick="document.getElementById('convention-modal').classList.add('hidden')">Fermer</button>
-            </div>
-        </div>
-
         <!-- Scoring -->
         <div class="settings-section">
             <h2>Mode de score</h2>
@@ -80,6 +71,16 @@
                 <button class="option-btn scoring-btn selected" data-scoring="duplicate">Duplicate</button>
                 <button class="option-btn scoring-btn" data-scoring="rubber">Rubber</button>
             </div>
+        </div>
+
+        <!-- Trick Display Time -->
+        <div class="settings-section">
+            <h2>Temps d'affichage des levées</h2>
+            <div class="slider-group">
+                <input type="range" id="trick-delay-slider" class="slider" min="1" max="10" step="0.5" value="2">
+                <span class="slider-value" id="trick-delay-value">2.0s</span>
+            </div>
+            <p class="hint-text">Durée pendant laquelle les 4 cartes jouées restent visibles avant de disparaître</p>
         </div>
 
         <button id="start-game-btn" class="primary-btn">Commencer la partie</button>
@@ -181,8 +182,27 @@
         <div id="score-details"></div>
         <div class="score-actions">
             <button id="next-deal-btn" class="primary-btn">Donne suivante</button>
+            <button id="analyze-btn" class="secondary-btn">Analyse Expert</button>
             <button id="back-settings-btn" class="secondary-btn">Retour aux paramètres</button>
         </div>
+    </div>
+</div>
+
+<!-- Analysis Modal -->
+<div id="analysis-modal" class="modal-overlay hidden">
+    <div class="modal-box modal-wide">
+        <h3>Analyse de la donne</h3>
+        <div id="analysis-body"></div>
+        <button class="primary-btn" id="analysis-close-btn">Fermer</button>
+    </div>
+</div>
+
+<!-- Convention Info Modal -->
+<div id="convention-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h3 id="convention-modal-title"></h3>
+        <div id="convention-modal-body"></div>
+        <button class="primary-btn" id="convention-close-btn">Fermer</button>
     </div>
 </div>
 

@@ -35,6 +35,7 @@ function init() {
             level TEXT DEFAULT 'intermediate',
             convention TEXT DEFAULT 'sef',
             scoring TEXT DEFAULT 'duplicate',
+            trick_delay REAL DEFAULT 2.0,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -52,6 +53,13 @@ function init() {
 
         CREATE INDEX IF NOT EXISTS idx_game_stats_user ON game_stats(user_id);
     `);
+
+    // Migration: add trick_delay column if missing (existing installs)
+    try {
+        db.prepare('SELECT trick_delay FROM user_settings LIMIT 0').get();
+    } catch (e) {
+        db.exec('ALTER TABLE user_settings ADD COLUMN trick_delay REAL DEFAULT 2.0');
+    }
 
     return db;
 }
@@ -82,8 +90,10 @@ function authenticateUser(username, password) {
 }
 
 function getUserSettings(userId) {
-    const stmt = db.prepare('SELECT seat, level, convention, scoring FROM user_settings WHERE user_id = ?');
-    return stmt.get(userId) || { seat: 'S', level: 'intermediate', convention: 'sef', scoring: 'duplicate' };
+    const stmt = db.prepare('SELECT seat, level, convention, scoring, trick_delay FROM user_settings WHERE user_id = ?');
+    const row = stmt.get(userId);
+    if (!row) return { seat: 'S', level: 'intermediate', convention: 'sef', scoring: 'duplicate', trickDelay: 2 };
+    return { seat: row.seat, level: row.level, convention: row.convention, scoring: row.scoring, trickDelay: row.trick_delay || 2 };
 }
 
 function saveUserSettings(userId, settings) {
@@ -97,18 +107,20 @@ function saveUserSettings(userId, settings) {
     const level = validLevels.includes(settings.level) ? settings.level : 'intermediate';
     const convention = validConventions.includes(settings.convention) ? settings.convention : 'sef';
     const scoring = validScoring.includes(settings.scoring) ? settings.scoring : 'duplicate';
+    const trickDelay = Math.max(1, Math.min(10, parseFloat(settings.trickDelay) || 2));
 
     const stmt = db.prepare(`
-        INSERT INTO user_settings (user_id, seat, level, convention, scoring, updated_at)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO user_settings (user_id, seat, level, convention, scoring, trick_delay, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id) DO UPDATE SET
             seat = excluded.seat,
             level = excluded.level,
             convention = excluded.convention,
             scoring = excluded.scoring,
+            trick_delay = excluded.trick_delay,
             updated_at = CURRENT_TIMESTAMP
     `);
-    stmt.run(userId, seat, level, convention, scoring);
+    stmt.run(userId, seat, level, convention, scoring, trickDelay);
 }
 
 function saveGameResult(userId, result) {
