@@ -4,6 +4,9 @@
 #   sudo bash setup.sh              # Fresh install
 #   sudo bash setup.sh --update     # Update existing installation
 #
+# This script deploys the local files (from git clone, zip, etc.)
+# into /opt/mybridge. No git operations are performed.
+#
 # Domain: bridge.buscaillet.fr
 # Stack:  Node.js + Express + SQLite + NGINX + Let's Encrypt
 # ========================================================================
@@ -16,10 +19,11 @@ APP_DIR="/opt/mybridge"
 APP_USER="mybridge"
 APP_GROUP="mybridge"
 NODE_VERSION="20"
-REPO_URL="https://github.com/cve-solutions/MyBridge.git"
-BRANCH="claude/bridge-card-game-fFmpj"
 SERVICE_NAME="mybridge"
 CERTBOT_EMAIL=""  # Will be asked during install
+
+# Source directory: where this script is located
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors
 RED='\033[0;31m'
@@ -82,6 +86,8 @@ do_update() {
         exit 1
     fi
 
+    log_info "Source: $SOURCE_DIR"
+
     log_info "Arrêt du service..."
     systemctl stop "$SERVICE_NAME" || true
 
@@ -94,10 +100,13 @@ do_update() {
         log_ok "Backup: $BACKUP_DIR/mybridge_${TIMESTAMP}.db"
     fi
 
-    log_info "Mise à jour du code source..."
-    cd "$APP_DIR"
-    sudo -u "$APP_USER" git fetch origin "$BRANCH"
-    sudo -u "$APP_USER" git reset --hard "origin/$BRANCH"
+    log_info "Copie des fichiers depuis $SOURCE_DIR..."
+    rsync -a --delete \
+        --exclude 'server/data/' \
+        --exclude 'server/.env' \
+        --exclude 'server/node_modules/' \
+        --exclude '.git/' \
+        "$SOURCE_DIR/" "$APP_DIR/"
 
     log_info "Mise à jour des dépendances Node.js..."
     cd "$APP_DIR/server"
@@ -143,7 +152,6 @@ install_system_deps() {
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         curl \
         wget \
-        git \
         build-essential \
         python3 \
         nginx \
@@ -186,20 +194,19 @@ create_app_user() {
     log_ok "Utilisateur $APP_USER créé."
 }
 
-clone_application() {
-    if [[ -d "$APP_DIR/.git" ]]; then
-        log_info "Mise à jour du dépôt existant..."
-        cd "$APP_DIR"
-        sudo -u "$APP_USER" git fetch origin "$BRANCH"
-        sudo -u "$APP_USER" git checkout "$BRANCH"
-        sudo -u "$APP_USER" git reset --hard "origin/$BRANCH"
-    else
-        log_info "Clonage du dépôt..."
-        # Remove default home dir content if exists
-        rm -rf "${APP_DIR:?}/"* "${APP_DIR}"/.[!.]* 2>/dev/null || true
-        git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-        chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
-    fi
+deploy_application() {
+    log_info "Déploiement des fichiers depuis $SOURCE_DIR..."
+
+    mkdir -p "$APP_DIR"
+
+    rsync -a --delete \
+        --exclude 'server/data/' \
+        --exclude 'server/.env' \
+        --exclude 'server/node_modules/' \
+        --exclude '.git/' \
+        "$SOURCE_DIR/" "$APP_DIR/"
+
+    chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 
     # Ensure NGINX (www-data) can read static files
     fix_permissions
@@ -482,7 +489,7 @@ main() {
     create_app_user
 
     # Step 2: Application
-    clone_application
+    deploy_application
     install_node_deps
     create_data_dir
     generate_session_secret
