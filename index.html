@@ -96,8 +96,11 @@
 
         <!-- ====== COMMUNITY TAB ====== -->
         <div class="main-tab-panel hidden" id="community-panel">
-            <!-- My Rating Summary -->
-            <div class="my-rating-box" id="my-rating-box"></div>
+            <!-- My Rating + Profile button -->
+            <div class="my-rating-row">
+                <div class="my-rating-box" id="my-rating-box"></div>
+                <button class="profile-gear-btn" id="profile-btn" title="Mes informations">&#9881;</button>
+            </div>
 
             <!-- Sub-tabs: Players / Rankings -->
             <div class="community-tabs">
@@ -136,6 +139,63 @@
         <div class="chat-input-row">
             <input type="text" id="chat-input" class="chat-input" placeholder="Votre message..." maxlength="500" autocomplete="off">
             <button class="chat-send-btn" id="chat-send-btn">Envoyer</button>
+        </div>
+    </div>
+</div>
+
+<!-- Profile Modal -->
+<div id="profile-modal" class="modal-overlay hidden">
+    <div class="modal-box modal-wide profile-modal-box">
+        <div class="chat-header">
+            <h3>Mes informations</h3>
+            <button class="chat-close-btn" id="profile-close-btn">&times;</button>
+        </div>
+        <div class="profile-content" id="profile-content">
+            <!-- Identity -->
+            <div class="profile-section">
+                <h4>Identité</h4>
+                <div class="profile-field">
+                    <label>Pseudo</label>
+                    <span id="profile-username" class="profile-value"></span>
+                </div>
+                <div class="profile-field">
+                    <label>Email</label>
+                    <input type="email" id="profile-email" class="profile-input" placeholder="votre@email.fr" maxlength="100">
+                </div>
+                <div class="profile-field">
+                    <label>N° licence FFB</label>
+                    <input type="text" id="profile-ffb-license" class="profile-input" placeholder="Ex: 123456" maxlength="20">
+                </div>
+            </div>
+
+            <!-- Club -->
+            <div class="profile-section">
+                <h4>Club</h4>
+                <div class="profile-field">
+                    <label>Nom du club</label>
+                    <input type="text" id="profile-club-name" class="profile-input" placeholder="Ex: Bridge Club de Paris" maxlength="100" list="club-suggestions">
+                    <datalist id="club-suggestions"></datalist>
+                </div>
+                <div class="profile-field">
+                    <label>Code club FFB</label>
+                    <input type="text" id="profile-club-code" class="profile-input" placeholder="Ex: 01234" maxlength="20">
+                </div>
+            </div>
+
+            <!-- Ranking -->
+            <div class="profile-section">
+                <h4>Catégorie / Classement</h4>
+                <div class="profile-ranking" id="profile-ranking"></div>
+            </div>
+
+            <button class="primary-btn" id="profile-save-btn" style="margin-top:15px;">Enregistrer</button>
+
+            <!-- Game History -->
+            <div class="profile-section" style="margin-top: 25px;">
+                <h4>Récapitulatif des parties</h4>
+                <div class="profile-summary" id="profile-summary"></div>
+                <div class="profile-history" id="profile-history"></div>
+            </div>
         </div>
     </div>
 </div>

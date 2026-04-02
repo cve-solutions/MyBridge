@@ -42,6 +42,8 @@ class CommunityManager {
         document.getElementById('chat-modal').addEventListener('click', (e) => {
             if (e.target.id === 'chat-modal') this._closeChat();
         });
+
+        this._initProfile();
     }
 
     async _fetchMyId() {
@@ -396,6 +398,148 @@ class CommunityManager {
             `;
             container.appendChild(el);
         }
+    }
+
+    // ==================== PROFILE ====================
+
+    _initProfile() {
+        document.getElementById('profile-btn').addEventListener('click', () => this._openProfile());
+        document.getElementById('profile-close-btn').addEventListener('click', () => {
+            document.getElementById('profile-modal').classList.add('hidden');
+        });
+        document.getElementById('profile-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'profile-modal') document.getElementById('profile-modal').classList.add('hidden');
+        });
+        document.getElementById('profile-save-btn').addEventListener('click', () => this._saveProfile());
+    }
+
+    async _openProfile() {
+        document.getElementById('profile-modal').classList.remove('hidden');
+
+        try {
+            const [profileRes, historyRes] = await Promise.all([
+                fetch('/api/profile'),
+                fetch('/api/game-history')
+            ]);
+
+            if (profileRes.ok) {
+                const p = await profileRes.json();
+                document.getElementById('profile-username').textContent = p.displayName || p.username;
+                document.getElementById('profile-email').value = p.email || '';
+                document.getElementById('profile-club-name').value = p.clubName || '';
+                document.getElementById('profile-club-code').value = p.clubCode || '';
+                document.getElementById('profile-ffb-license').value = p.ffbLicense || '';
+
+                // Ranking section
+                const rankHtml = `
+                    <div class="profile-rank-card">
+                        <div class="rank-label">Rating</div>
+                        <div class="rank-value">${Math.round(p.rating)}</div>
+                        <div class="rank-sub">Record: ${Math.round(p.peakRating)}</div>
+                    </div>
+                    <div class="profile-rank-card">
+                        <div class="rank-label">Catégorie</div>
+                        <div class="rank-value" style="font-size:0.9em">${p.title}</div>
+                    </div>
+                    <div class="profile-rank-card">
+                        <div class="rank-label">Parties</div>
+                        <div class="rank-value">${p.gamesPlayed}</div>
+                        <div class="rank-sub">${p.wins} victoires</div>
+                    </div>
+                    <div class="profile-rank-card">
+                        <div class="rank-label">Membre depuis</div>
+                        <div class="rank-value" style="font-size:0.8em">${p.memberSince ? new Date(p.memberSince).toLocaleDateString('fr-FR') : '-'}</div>
+                    </div>
+                `;
+                document.getElementById('profile-ranking').innerHTML = rankHtml;
+            }
+
+            if (historyRes.ok) {
+                const data = await historyRes.json();
+                this._renderGameSummary(data.summary);
+                this._renderGameHistory(data.history);
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    async _saveProfile() {
+        const btn = document.getElementById('profile-save-btn');
+        btn.disabled = true;
+        btn.textContent = 'Enregistrement...';
+
+        try {
+            await fetch('/api/profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: document.getElementById('profile-email').value,
+                    clubName: document.getElementById('profile-club-name').value,
+                    clubCode: document.getElementById('profile-club-code').value,
+                    ffbLicense: document.getElementById('profile-ffb-license').value
+                })
+            });
+            btn.textContent = 'Enregistré !';
+            setTimeout(() => { btn.textContent = 'Enregistrer'; btn.disabled = false; }, 1500);
+        } catch (e) {
+            btn.textContent = 'Erreur';
+            setTimeout(() => { btn.textContent = 'Enregistrer'; btn.disabled = false; }, 1500);
+        }
+    }
+
+    _renderGameSummary(summary) {
+        if (!summary) return;
+        const el = document.getElementById('profile-summary');
+        el.innerHTML = `
+            <div class="summary-card">
+                <div class="summary-val">${summary.totalGames}</div>
+                <div class="summary-lbl">Donnes jouées</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-val">${summary.winRate}%</div>
+                <div class="summary-lbl">Taux de réussite</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-val">${summary.averageScore > 0 ? '+' : ''}${summary.averageScore}</div>
+                <div class="summary-lbl">Score moyen</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-val">${summary.bestScore > 0 ? '+' : ''}${summary.bestScore}</div>
+                <div class="summary-lbl">Meilleur score</div>
+            </div>
+        `;
+    }
+
+    _renderGameHistory(history) {
+        const el = document.getElementById('profile-history');
+        if (!history || history.length === 0) {
+            el.innerHTML = '<p class="hint-text">Aucune partie jouée</p>';
+            return;
+        }
+
+        let html = '<table><thead><tr>';
+        html += '<th>Date</th><th>Donne</th><th>Contrat</th><th>Décl.</th><th>Levées</th><th>Score NS</th><th>Résultat</th>';
+        html += '</tr></thead><tbody>';
+
+        for (const g of history) {
+            const date = g.played_at ? new Date(g.played_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
+            const time = g.played_at ? new Date(g.played_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+            const scoreColor = g.score_ns > 0 ? '#2ecc71' : (g.score_ns < 0 ? '#e74c3c' : '#888');
+            const result = g.score_ns > 0 ? 'Réussi' : (g.score_ns < 0 ? 'Chute' : 'Passé');
+            const resultIcon = g.score_ns > 0 ? '+' : (g.score_ns < 0 ? '-' : '=');
+
+            html += '<tr>';
+            html += `<td title="${time}">${date}</td>`;
+            html += `<td>${g.deal_number || '-'}</td>`;
+            html += `<td>${g.contract || 'Passée'}</td>`;
+            html += `<td>${g.declarer || '-'}</td>`;
+            html += `<td>${g.tricks_made != null ? g.tricks_made : '-'}</td>`;
+            html += `<td style="color:${scoreColor};font-weight:bold">${g.score_ns > 0 ? '+' : ''}${g.score_ns}</td>`;
+            html += `<td style="color:${scoreColor}">${result}</td>`;
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+        el.innerHTML = html;
     }
 
     // ==================== UTILS ====================

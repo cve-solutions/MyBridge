@@ -80,6 +80,15 @@ function init() {
             peak_rating REAL DEFAULT ${DEFAULT_RATING},
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS player_profiles (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            email TEXT DEFAULT '',
+            club_name TEXT DEFAULT '',
+            club_code TEXT DEFAULT '',
+            ffb_license TEXT DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     `);
 
     // Migration: add trick_delay column if missing (existing installs)
@@ -315,6 +324,77 @@ function getRankings(limit = 50) {
     `).all(limit);
 }
 
+// ==================== PLAYER PROFILE ====================
+
+function getPlayerProfile(userId) {
+    const profile = db.prepare('SELECT email, club_name, club_code, ffb_license FROM player_profiles WHERE user_id = ?').get(userId);
+    const user = db.prepare('SELECT username, display_name, created_at FROM users WHERE id = ?').get(userId);
+    const rating = getPlayerRating(userId);
+
+    return {
+        username: user ? user.username : '',
+        displayName: user ? user.display_name : '',
+        memberSince: user ? user.created_at : '',
+        email: profile ? profile.email : '',
+        clubName: profile ? profile.club_name : '',
+        clubCode: profile ? profile.club_code : '',
+        ffbLicense: profile ? profile.ffb_license : '',
+        ...rating
+    };
+}
+
+function savePlayerProfile(userId, profile) {
+    const email = (profile.email || '').trim().slice(0, 100);
+    const clubName = (profile.clubName || '').trim().slice(0, 100);
+    const clubCode = (profile.clubCode || '').trim().slice(0, 20);
+    const ffbLicense = (profile.ffbLicense || '').trim().slice(0, 20);
+
+    db.prepare(`
+        INSERT INTO player_profiles (user_id, email, club_name, club_code, ffb_license, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            email = excluded.email,
+            club_name = excluded.club_name,
+            club_code = excluded.club_code,
+            ffb_license = excluded.ffb_license,
+            updated_at = CURRENT_TIMESTAMP
+    `).run(userId, email, clubName, clubCode, ffbLicense);
+}
+
+function getGameHistory(userId, limit = 100) {
+    return db.prepare(`
+        SELECT id, deal_number, contract, declarer, tricks_made, score_ns, score_ew, played_at
+        FROM game_stats
+        WHERE user_id = ?
+        ORDER BY played_at DESC
+        LIMIT ?
+    `).all(userId, limit);
+}
+
+function getGameSummary(userId) {
+    const total = db.prepare('SELECT COUNT(*) as count FROM game_stats WHERE user_id = ?').get(userId);
+    const won = db.prepare(`
+        SELECT COUNT(*) as count FROM game_stats WHERE user_id = ? AND score_ns > 0
+    `).get(userId);
+    const avgScore = db.prepare('SELECT AVG(score_ns) as avg FROM game_stats WHERE user_id = ?').get(userId);
+    const bestScore = db.prepare('SELECT MAX(score_ns) as best FROM game_stats WHERE user_id = ?').get(userId);
+    const contracts = db.prepare(`
+        SELECT contract, COUNT(*) as count,
+               SUM(CASE WHEN score_ns > 0 THEN 1 ELSE 0 END) as successes
+        FROM game_stats WHERE user_id = ? AND contract IS NOT NULL
+        GROUP BY contract ORDER BY count DESC LIMIT 10
+    `).all(userId);
+
+    return {
+        totalGames: total.count,
+        gamesWon: won.count,
+        winRate: total.count > 0 ? Math.round((won.count / total.count) * 100) : 0,
+        averageScore: Math.round(avgScore.avg || 0),
+        bestScore: bestScore.best || 0,
+        favoriteContracts: contracts
+    };
+}
+
 function close() {
     if (db) db.close();
 }
@@ -324,5 +404,6 @@ module.exports = {
     saveGameResult, getUserStats,
     getAllPlayers, sendMessage, getConversation, markMessagesRead, getUnreadCounts,
     updateRating, getPlayerRating, getRankings, getRankTitle,
+    getPlayerProfile, savePlayerProfile, getGameHistory, getGameSummary,
     close
 };
