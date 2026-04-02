@@ -17,6 +17,7 @@ class BridgeApp {
 
         this._initUI();
         this._loadUserSettings();
+        this.community = new CommunityManager(this);
     }
 
     // ==================== UI INITIALIZATION ====================
@@ -81,7 +82,11 @@ class BridgeApp {
         document.getElementById('start-game-btn').addEventListener('click', () => this._startGame());
 
         // Settings button (back to settings)
-        document.getElementById('settings-btn').addEventListener('click', () => this._showScreen('settings-screen'));
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            if (this.community) this.community.notifyLeaveGame();
+            if (this.community) this.community.loadPlayers();
+            this._showScreen('settings-screen');
+        });
 
         // Logout button
         const logoutBtn = document.getElementById('logout-btn');
@@ -106,7 +111,11 @@ class BridgeApp {
         // Score screen
         document.getElementById('next-deal-btn').addEventListener('click', () => this._nextDeal());
         document.getElementById('analyze-btn').addEventListener('click', () => this._showAnalysis());
-        document.getElementById('back-settings-btn').addEventListener('click', () => this._showScreen('settings-screen'));
+        document.getElementById('back-settings-btn').addEventListener('click', () => {
+            if (this.community) this.community.notifyLeaveGame();
+            if (this.community) this.community.loadPlayers();
+            this._showScreen('settings-screen');
+        });
 
         // Modal close buttons
         document.getElementById('convention-close-btn').addEventListener('click', (e) => {
@@ -141,6 +150,7 @@ class BridgeApp {
         this.ai = new BridgeAI(this.settings);
         this._layoutTable();
         this._showScreen('game-screen');
+        if (this.community) this.community.notifyEnterGame();
         this._startDeal();
     }
 
@@ -772,6 +782,19 @@ class BridgeApp {
         detailsEl.innerHTML = html;
 
         this._saveGameResult();
+        this._updatePlayerRating(gs, score);
+    }
+
+    _updatePlayerRating(gs, score) {
+        if (!gs.contract) return;
+        const declarerTeam = teamOf(gs.contract.declarer);
+        const humanTeam = teamOf(gs.humanPos);
+        const won = (humanTeam === declarerTeam && score.ns >= 0) || (humanTeam !== declarerTeam && score.ns < 0);
+        fetch('/api/update-rating', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ won, aiLevel: this.settings.level })
+        }).catch(() => {});
     }
 
     // ==================== MESSAGES ====================

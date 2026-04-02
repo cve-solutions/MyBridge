@@ -6,6 +6,12 @@ const path = require('path');
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'mybridge.db');
 const SALT_ROUNDS = 12;
 
+// ELO-style rating constants (federation bridge style)
+const DEFAULT_RATING = 1200;
+const K_FACTOR_NEW = 40;    // New players (< 20 games)
+const K_FACTOR_NORMAL = 20; // Normal players
+const K_FACTOR_HIGH = 10;   // High-rated players (> 1800)
+
 let db;
 
 function init() {
@@ -52,6 +58,28 @@ function init() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_game_stats_user ON game_stats(user_id);
+
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            to_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            message TEXT NOT NULL,
+            read INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chat_from ON chat_messages(from_user_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_to ON chat_messages(to_user_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_unread ON chat_messages(to_user_id, read);
+
+        CREATE TABLE IF NOT EXISTS player_ratings (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            rating REAL DEFAULT ${DEFAULT_RATING},
+            games_played INTEGER DEFAULT 0,
+            wins INTEGER DEFAULT 0,
+            peak_rating REAL DEFAULT ${DEFAULT_RATING},
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     `);
 
     // Migration: add trick_delay column if missing (existing installs)
@@ -59,6 +87,20 @@ function init() {
         db.prepare('SELECT trick_delay FROM user_settings LIMIT 0').get();
     } catch (e) {
         db.exec('ALTER TABLE user_settings ADD COLUMN trick_delay REAL DEFAULT 2.0');
+    }
+
+    // Migration: add player_ratings for existing users
+    const usersWithoutRating = db.prepare(`
+        SELECT u.id FROM users u LEFT JOIN player_ratings pr ON u.id = pr.user_id WHERE pr.user_id IS NULL
+    `).all();
+    if (usersWithoutRating.length > 0) {
+        const insertRating = db.prepare('INSERT OR IGNORE INTO player_ratings (user_id) VALUES (?)');
+        const tx = db.transaction(() => {
+            for (const u of usersWithoutRating) {
+                insertRating.run(u.id);
+            }
+        });
+        tx();
     }
 
     return db;
@@ -69,9 +111,9 @@ function createUser(username, password, displayName) {
     const stmt = db.prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)');
     const result = stmt.run(username, hash, displayName || username);
 
-    // Create default settings
-    const settingsStmt = db.prepare('INSERT INTO user_settings (user_id) VALUES (?)');
-    settingsStmt.run(result.lastInsertRowid);
+    // Create default settings and rating
+    db.prepare('INSERT INTO user_settings (user_id) VALUES (?)').run(result.lastInsertRowid);
+    db.prepare('INSERT INTO player_ratings (user_id) VALUES (?)').run(result.lastInsertRowid);
 
     return result.lastInsertRowid;
 }
@@ -146,8 +188,141 @@ function getUserStats(userId) {
     };
 }
 
+// ==================== PLAYER LIST ====================
+
+function getAllPlayers() {
+    return db.prepare(`
+        SELECT u.id, u.username, u.display_name, u.last_login,
+               COALESCE(pr.rating, ${DEFAULT_RATING}) as rating,
+               COALESCE(pr.games_played, 0) as games_played,
+               COALESCE(pr.wins, 0) as wins,
+               COALESCE(pr.peak_rating, ${DEFAULT_RATING}) as peak_rating
+        FROM users u
+        LEFT JOIN player_ratings pr ON u.id = pr.user_id
+        ORDER BY pr.rating DESC, u.display_name ASC
+    `).all();
+}
+
+// ==================== CHAT ====================
+
+function sendMessage(fromUserId, toUserId, message) {
+    const text = message.trim().slice(0, 500);
+    if (!text) return null;
+    const stmt = db.prepare('INSERT INTO chat_messages (from_user_id, to_user_id, message) VALUES (?, ?, ?)');
+    const result = stmt.run(fromUserId, toUserId, text);
+    return {
+        id: result.lastInsertRowid,
+        from_user_id: fromUserId,
+        to_user_id: toUserId,
+        message: text,
+        read: 0,
+        created_at: new Date().toISOString()
+    };
+}
+
+function getConversation(userId1, userId2, limit = 50) {
+    return db.prepare(`
+        SELECT cm.*, u.display_name as from_name
+        FROM chat_messages cm
+        JOIN users u ON u.id = cm.from_user_id
+        WHERE (cm.from_user_id = ? AND cm.to_user_id = ?)
+           OR (cm.from_user_id = ? AND cm.to_user_id = ?)
+        ORDER BY cm.created_at DESC LIMIT ?
+    `).all(userId1, userId2, userId2, userId1, limit).reverse();
+}
+
+function markMessagesRead(toUserId, fromUserId) {
+    db.prepare('UPDATE chat_messages SET read = 1 WHERE to_user_id = ? AND from_user_id = ? AND read = 0')
+        .run(toUserId, fromUserId);
+}
+
+function getUnreadCounts(userId) {
+    return db.prepare(`
+        SELECT from_user_id, COUNT(*) as count
+        FROM chat_messages WHERE to_user_id = ? AND read = 0
+        GROUP BY from_user_id
+    `).all(userId);
+}
+
+// ==================== RANKINGS ====================
+
+function getKFactor(rating, gamesPlayed) {
+    if (gamesPlayed < 20) return K_FACTOR_NEW;
+    if (rating > 1800) return K_FACTOR_HIGH;
+    return K_FACTOR_NORMAL;
+}
+
+function getRankTitle(rating) {
+    if (rating >= 2200) return '4ème série - Expert';
+    if (rating >= 1900) return '3ème série - Confirmé';
+    if (rating >= 1600) return '2ème série - Intermédiaire';
+    if (rating >= 1300) return '1ère série - Avancé';
+    return 'Promotion - Débutant';
+}
+
+function updateRating(userId, won, aiLevel) {
+    // AI opponent rating based on level
+    const aiRatings = {
+        beginner: 800,
+        intermediate: 1200,
+        advanced: 1600,
+        expert: 2000
+    };
+    const opponentRating = aiRatings[aiLevel] || 1200;
+
+    let row = db.prepare('SELECT rating, games_played, wins, peak_rating FROM player_ratings WHERE user_id = ?').get(userId);
+    if (!row) {
+        db.prepare('INSERT INTO player_ratings (user_id) VALUES (?)').run(userId);
+        row = { rating: DEFAULT_RATING, games_played: 0, wins: 0, peak_rating: DEFAULT_RATING };
+    }
+
+    const expected = 1 / (1 + Math.pow(10, (opponentRating - row.rating) / 400));
+    const actual = won ? 1 : 0;
+    const k = getKFactor(row.rating, row.games_played);
+    const newRating = Math.max(100, Math.round((row.rating + k * (actual - expected)) * 10) / 10);
+    const newPeak = Math.max(row.peak_rating, newRating);
+
+    db.prepare(`
+        UPDATE player_ratings
+        SET rating = ?, games_played = games_played + 1, wins = wins + ?, peak_rating = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+    `).run(newRating, won ? 1 : 0, newPeak, userId);
+
+    return { rating: newRating, delta: Math.round((newRating - row.rating) * 10) / 10, title: getRankTitle(newRating) };
+}
+
+function getPlayerRating(userId) {
+    const row = db.prepare('SELECT rating, games_played, wins, peak_rating FROM player_ratings WHERE user_id = ?').get(userId);
+    if (!row) return { rating: DEFAULT_RATING, gamesPlayed: 0, wins: 0, peakRating: DEFAULT_RATING, title: getRankTitle(DEFAULT_RATING) };
+    return {
+        rating: row.rating,
+        gamesPlayed: row.games_played,
+        wins: row.wins,
+        peakRating: row.peak_rating,
+        title: getRankTitle(row.rating)
+    };
+}
+
+function getRankings(limit = 50) {
+    return db.prepare(`
+        SELECT u.id, u.username, u.display_name,
+               pr.rating, pr.games_played, pr.wins, pr.peak_rating
+        FROM player_ratings pr
+        JOIN users u ON u.id = pr.user_id
+        WHERE pr.games_played > 0
+        ORDER BY pr.rating DESC
+        LIMIT ?
+    `).all(limit);
+}
+
 function close() {
     if (db) db.close();
 }
 
-module.exports = { init, createUser, authenticateUser, getUserSettings, saveUserSettings, saveGameResult, getUserStats, close };
+module.exports = {
+    init, createUser, authenticateUser, getUserSettings, saveUserSettings,
+    saveGameResult, getUserStats,
+    getAllPlayers, sendMessage, getConversation, markMessagesRead, getUnreadCounts,
+    updateRating, getPlayerRating, getRankings, getRankTitle,
+    close
+};
