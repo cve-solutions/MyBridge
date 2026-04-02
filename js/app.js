@@ -78,8 +78,24 @@ class BridgeApp {
             });
         });
 
-        // Start game
+        // Main tabs (Paramètres / Joueurs)
+        document.querySelectorAll('.main-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.querySelectorAll('.main-tab-panel').forEach(p => p.classList.add('hidden'));
+                document.getElementById(tab.dataset.mainTab).classList.remove('hidden');
+                // Load community data when switching to Joueurs tab
+                if (tab.dataset.mainTab === 'community-panel' && this.community) {
+                    this.community.loadPlayers();
+                    this.community.loadRankings();
+                }
+            });
+        });
+
+        // Start game (both buttons)
         document.getElementById('start-game-btn').addEventListener('click', () => this._startGame());
+        document.getElementById('start-game-btn-2').addEventListener('click', () => this._startGame());
 
         // Settings button (back to settings)
         document.getElementById('settings-btn').addEventListener('click', () => {
