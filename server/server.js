@@ -22,6 +22,7 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
+const { WebSocketServer } = require('ws');
 const db = require('./db');
 
 const PORT = process.env.PORT || 3000;
@@ -41,7 +42,7 @@ app.use(helmet({
             scriptSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:"],
-            connectSrc: ["'self'"],
+            connectSrc: ["'self'", "ws:", "wss:"],
             fontSrc: ["'self'"],
             objectSrc: ["'none'"],
             frameAncestors: ["'none'"]
@@ -266,6 +267,107 @@ app.get('/api/stats', apiLimiter, requireAuth, (req, res) => {
     res.json(stats);
 });
 
+// ==================== PLAYER LIST + RANKINGS ====================
+
+app.get('/api/players', apiLimiter, requireAuth, (req, res) => {
+    const players = db.getAllPlayers();
+    // Add online status
+    const result = players.map(p => ({
+        id: p.id,
+        username: p.username,
+        displayName: p.display_name,
+        lastLogin: p.last_login,
+        rating: Math.round(p.rating),
+        gamesPlayed: p.games_played,
+        wins: p.wins,
+        peakRating: Math.round(p.peak_rating),
+        online: onlineUsers.has(p.id),
+        inGame: inGameUsers.has(p.id)
+    }));
+    res.json(result);
+});
+
+app.get('/api/rankings', apiLimiter, requireAuth, (req, res) => {
+    const rankings = db.getRankings();
+    res.json(rankings.map((r, i) => ({
+        rank: i + 1,
+        id: r.id,
+        displayName: r.display_name,
+        rating: Math.round(r.rating),
+        gamesPlayed: r.games_played,
+        wins: r.wins,
+        peakRating: Math.round(r.peak_rating),
+        title: db.getRankTitle(r.rating)
+    })));
+});
+
+app.get('/api/my-rating', apiLimiter, requireAuth, (req, res) => {
+    const rating = db.getPlayerRating(req.session.userId);
+    res.json(rating);
+});
+
+app.post('/api/update-rating', apiLimiter, requireAuth, (req, res) => {
+    const { won, aiLevel } = req.body;
+    const result = db.updateRating(req.session.userId, !!won, aiLevel || 'intermediate');
+    res.json(result);
+});
+
+// ==================== CHAT ====================
+
+app.get('/api/chat/:userId', apiLimiter, requireAuth, (req, res) => {
+    const otherUserId = parseInt(req.params.userId);
+    if (isNaN(otherUserId)) return res.status(400).json({ error: 'ID invalide' });
+    db.markMessagesRead(req.session.userId, otherUserId);
+    const messages = db.getConversation(req.session.userId, otherUserId);
+    res.json(messages);
+});
+
+app.post('/api/chat/:userId', apiLimiter, requireAuth, (req, res) => {
+    const otherUserId = parseInt(req.params.userId);
+    if (isNaN(otherUserId)) return res.status(400).json({ error: 'ID invalide' });
+    const { message } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Message vide' });
+
+    const msg = db.sendMessage(req.session.userId, otherUserId, message);
+    if (!msg) return res.status(400).json({ error: 'Erreur envoi' });
+
+    // Real-time delivery via WebSocket
+    const targetWs = wsClients.get(otherUserId);
+    if (targetWs && targetWs.readyState === 1) {
+        const fromUser = db.getAllPlayers().find(p => p.id === req.session.userId);
+        targetWs.send(JSON.stringify({
+            type: 'chat_message',
+            message: {
+                ...msg,
+                from_name: fromUser ? fromUser.display_name : 'Inconnu'
+            }
+        }));
+    }
+
+    res.json(msg);
+});
+
+app.get('/api/chat-unread', apiLimiter, requireAuth, (req, res) => {
+    const unread = db.getUnreadCounts(req.session.userId);
+    res.json(unread);
+});
+
+// ==================== WEBSOCKET ====================
+
+// Track online users and their WebSocket connections
+const onlineUsers = new Set();   // user IDs
+const inGameUsers = new Set();   // user IDs currently in a game
+const wsClients = new Map();     // userId -> ws
+
+function broadcastOnlineStatus() {
+    const onlineList = Array.from(onlineUsers);
+    const inGameList = Array.from(inGameUsers);
+    const msg = JSON.stringify({ type: 'online_status', online: onlineList, inGame: inGameList });
+    for (const [, ws] of wsClients) {
+        if (ws.readyState === 1) ws.send(msg);
+    }
+}
+
 // ==================== START ====================
 
 db.init();
@@ -274,9 +376,82 @@ const server = app.listen(PORT, '127.0.0.1', () => {
     console.log(`MyBridge server running on http://127.0.0.1:${PORT}`);
 });
 
+// WebSocket server shares the HTTP server
+const wss = new WebSocketServer({ server });
+
+// Parse session from WebSocket upgrade request
+wss.on('connection', (ws, req) => {
+    // Parse cookies to find session ID
+    const cookies = {};
+    if (req.headers.cookie) {
+        for (const part of req.headers.cookie.split(';')) {
+            const [k, ...v] = part.trim().split('=');
+            cookies[k] = decodeURIComponent(v.join('='));
+        }
+    }
+
+    const sidRaw = cookies['mybridge.sid'];
+    if (!sidRaw) { ws.close(); return; }
+
+    // Decode signed cookie (express-session uses s: prefix)
+    let sid = sidRaw;
+    if (sid.startsWith('s:')) {
+        const val = sid.slice(2);
+        const dot = val.indexOf('.');
+        if (dot !== -1) {
+            const unsigned = val.slice(0, dot);
+            const sig = val.slice(dot + 1);
+            const expected = crypto.createHmac('sha256', SESSION_SECRET).update(unsigned).digest('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+            if (sig === expected) {
+                sid = unsigned;
+            } else {
+                ws.close(); return;
+            }
+        }
+    }
+
+    // Look up session
+    sessionStore.get(sid, (err, session) => {
+        if (err || !session || !session.userId) {
+            ws.close(); return;
+        }
+
+        const userId = session.userId;
+        ws.userId = userId;
+
+        // Register
+        wsClients.set(userId, ws);
+        onlineUsers.add(userId);
+        broadcastOnlineStatus();
+
+        ws.on('message', (data) => {
+            try {
+                const msg = JSON.parse(data);
+                if (msg.type === 'enter_game') {
+                    inGameUsers.add(userId);
+                    broadcastOnlineStatus();
+                } else if (msg.type === 'leave_game') {
+                    inGameUsers.delete(userId);
+                    broadcastOnlineStatus();
+                } else if (msg.type === 'ping') {
+                    ws.send(JSON.stringify({ type: 'pong' }));
+                }
+            } catch (e) { /* ignore invalid messages */ }
+        });
+
+        ws.on('close', () => {
+            wsClients.delete(userId);
+            onlineUsers.delete(userId);
+            inGameUsers.delete(userId);
+            broadcastOnlineStatus();
+        });
+    });
+});
+
 // Graceful shutdown
 function shutdown() {
     console.log('Shutting down...');
+    wss.close();
     server.close(() => {
         sessionStore.close();
         db.close();
