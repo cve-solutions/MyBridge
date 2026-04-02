@@ -108,13 +108,13 @@ do_update() {
         --exclude '.git/' \
         "$SOURCE_DIR/" "$APP_DIR/"
 
-    log_info "Mise à jour des dépendances Node.js..."
-    cd "$APP_DIR/server"
-    sudo -u "$APP_USER" npm install --omit=dev
-
     log_info "Mise à jour des permissions..."
     chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
     fix_permissions
+
+    log_info "Mise à jour des dépendances Node.js..."
+    cd "$APP_DIR/server"
+    sudo -u "$APP_USER" npm install --omit=dev
 
     log_info "Mise à jour de la configuration NGINX..."
     cp "$APP_DIR/nginx/bridge.conf" "/etc/nginx/sites-available/${DOMAIN}"
