@@ -650,6 +650,155 @@ body {
 
 .chat-send-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(233,69,96,0.4); }
 
+/* ==================== PROFILE ====================*/
+.my-rating-row {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.my-rating-row .my-rating-box {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.profile-gear-btn {
+    width: 48px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #888;
+    font-size: 1.5em;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.profile-gear-btn:hover {
+    color: #e94560;
+    border-color: #e94560;
+    background: rgba(233,69,96,0.1);
+}
+
+.profile-modal-box {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.profile-section {
+    margin-bottom: 18px;
+}
+
+.profile-section h4 {
+    color: #e94560;
+    font-size: 0.95em;
+    margin-bottom: 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(233,69,96,0.2);
+}
+
+.profile-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.profile-field label {
+    width: 130px;
+    flex-shrink: 0;
+    color: #aaa;
+    font-size: 0.85em;
+}
+
+.profile-value {
+    color: #eee;
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.profile-input {
+    flex: 1;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #eee;
+    border-radius: 6px;
+    font-size: 0.9em;
+    outline: none;
+}
+
+.profile-input:focus { border-color: #e94560; }
+
+.profile-ranking {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.profile-rank-card {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: center;
+    flex: 1;
+    min-width: 100px;
+}
+
+.profile-rank-card .rank-label { font-size: 0.75em; color: #888; }
+.profile-rank-card .rank-value { font-size: 1.3em; font-weight: bold; color: #e94560; margin-top: 2px; }
+.profile-rank-card .rank-sub { font-size: 0.7em; color: #666; margin-top: 2px; }
+
+.profile-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.summary-card {
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+    padding: 8px 14px;
+    text-align: center;
+    flex: 1;
+    min-width: 80px;
+}
+
+.summary-card .summary-val { font-size: 1.2em; font-weight: bold; color: #eee; }
+.summary-card .summary-lbl { font-size: 0.7em; color: #888; margin-top: 2px; }
+
+.profile-history {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.profile-history table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8em;
+    color: #bbb;
+}
+
+.profile-history th {
+    text-align: left;
+    padding: 5px 6px;
+    color: #888;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-weight: 600;
+    font-size: 0.85em;
+}
+
+.profile-history td {
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.profile-history tr:hover { background: rgba(255,255,255,0.02); }
+
 /* ==================== GAME SCREEN ==================== */
 #game-screen {
     flex-direction: column;

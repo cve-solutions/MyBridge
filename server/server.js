@@ -312,6 +312,24 @@ app.post('/api/update-rating', apiLimiter, requireAuth, (req, res) => {
     res.json(result);
 });
 
+// ==================== PLAYER PROFILE ====================
+
+app.get('/api/profile', apiLimiter, requireAuth, (req, res) => {
+    const profile = db.getPlayerProfile(req.session.userId);
+    res.json(profile);
+});
+
+app.put('/api/profile', apiLimiter, requireAuth, (req, res) => {
+    db.savePlayerProfile(req.session.userId, req.body);
+    res.json({ success: true });
+});
+
+app.get('/api/game-history', apiLimiter, requireAuth, (req, res) => {
+    const history = db.getGameHistory(req.session.userId);
+    const summary = db.getGameSummary(req.session.userId);
+    res.json({ history, summary });
+});
+
 // ==================== CHAT ====================
 
 app.get('/api/chat/:userId', apiLimiter, requireAuth, (req, res) => {
