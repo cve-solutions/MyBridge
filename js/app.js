@@ -913,7 +913,7 @@ class BridgeApp {
 
         // 2. Bidding sequence
         if (gs.bidding && gs.bidding.bids.length > 0) {
-            html += '<div class="analysis-section"><h4>Séquence d\'enchères</h4>';
+            html += '<div class="analysis-section"><h4>Séquence d\'enchères jouée</h4>';
             html += '<div class="analysis-bid-sequence">';
             for (const bid of gs.bidding.bids) {
                 const label = POSITION_FR[bid.player];
@@ -930,6 +930,9 @@ class BridgeApp {
                 html += `<br>Mort: <strong>${POSITION_FR[c.dummy]}</strong></p>`;
             }
             html += '</div>';
+
+            // Expert bidding sequence
+            html += this._generateExpertBiddingAnalysis(gs);
         }
 
         // 3. Play analysis
@@ -973,6 +976,9 @@ class BridgeApp {
                 html += '</tr>';
             }
             html += '</table></div>';
+
+            // Ideal play simulation
+            html += this._generateIdealPlayAnalysis(gs);
         }
 
         // 4. Score recap
@@ -991,6 +997,205 @@ class BridgeApp {
 
         document.getElementById('analysis-body').innerHTML = html;
         this._openModal('analysis-modal');
+    }
+
+    // Simulate expert-level bidding for all 4 hands
+    _generateExpertBiddingAnalysis(gs) {
+        if (!gs.originalHands || !gs.dealer) return '';
+
+        const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+        const simBidding = new BiddingManager(gs.dealer);
+
+        let safety = 0;
+        while (!simBidding.isComplete && safety < 40) {
+            const pos = simBidding.currentBidder;
+            const hand = gs.originalHands[pos];
+            if (!hand) break;
+
+            // Build a minimal gameState-like object for the AI
+            const fakeGS = {
+                hands: gs.originalHands,
+                bidding: simBidding,
+                humanPos: '__none__'
+            };
+            const bid = expertAI.makeBid(fakeGS, pos);
+            simBidding.placeBid(bid);
+            safety++;
+        }
+
+        let html = '<div class="analysis-section"><h4>Séquence d\'enchères expert (' + this._conventionLabel() + ')</h4>';
+        html += '<div class="analysis-bid-sequence">';
+        for (const bid of simBidding.bids) {
+            const label = POSITION_FR[bid.player];
+            html += `<span class="analysis-bid"><strong>${label}:</strong> ${bid.toString()}</span>`;
+        }
+        html += '</div>';
+
+        if (simBidding.contract) {
+            const c = simBidding.contract;
+            const suitStr = c.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[c.suit];
+            html += `<p class="analysis-comment">Contrat expert: <strong>${c.level}${suitStr}</strong> par <strong>${POSITION_FR[c.declarer]}</strong>`;
+            if (c.doubled) html += ' contré';
+            if (c.redoubled) html += ' surcontré';
+            html += `<br>Mort: <strong>${POSITION_FR[c.dummy]}</strong></p>`;
+
+            // Compare with actual contract
+            if (gs.contract) {
+                const actualIdx = (gs.contract.level - 1) * 5 + SUIT_ORDER[gs.contract.suit];
+                const expertIdx = (c.level - 1) * 5 + SUIT_ORDER[c.suit];
+                if (expertIdx > actualIdx) {
+                    html += `<p class="analysis-comment" style="color:#f1c40f">L'expert aurait enchéri plus haut.</p>`;
+                } else if (expertIdx < actualIdx) {
+                    html += `<p class="analysis-comment" style="color:#f1c40f">L'expert aurait enchéri plus prudemment.</p>`;
+                } else if (c.declarer !== gs.contract.declarer) {
+                    html += `<p class="analysis-comment" style="color:#f1c40f">Même contrat, mais joué par un déclarant différent.</p>`;
+                } else {
+                    html += `<p class="analysis-comment" style="color:#2ecc71">Même contrat que l'expert !</p>`;
+                }
+            }
+        } else {
+            html += `<p class="analysis-comment">L'expert aurait passé cette donne.</p>`;
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    // Simulate ideal play using expert AI for all 4 positions
+    _generateIdealPlayAnalysis(gs) {
+        if (!gs.contract || !gs.originalHands) return '';
+
+        const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+
+        // Clone hands for simulation
+        const simHands = {};
+        for (const pos of POSITIONS) {
+            simHands[pos] = gs.originalHands[pos] ? [...gs.originalHands[pos]] : [];
+        }
+
+        const contract = gs.contract;
+        const trump = contract.suit;
+        const leader = nextPos(contract.declarer);
+        const simTricks = [];
+        let currentLeader = leader;
+        const simTricksWon = { NS: 0, EW: 0 };
+
+        for (let t = 0; t < 13; t++) {
+            const trick = new Trick(currentLeader, trump);
+            let currentPlayer = currentLeader;
+
+            for (let c = 0; c < 4; c++) {
+                const hand = simHands[currentPlayer];
+                if (!hand || hand.length === 0) break;
+
+                // Get playable cards
+                let playable;
+                if (trick.suitLed) {
+                    const followSuit = hand.filter(card => card.suit === trick.suitLed);
+                    playable = followSuit.length > 0 ? followSuit : hand;
+                } else {
+                    playable = hand;
+                }
+
+                // Build minimal gameState for AI
+                const fakeGS = {
+                    hands: simHands,
+                    contract: contract,
+                    currentTrick: trick,
+                    declarerPos: contract.declarer,
+                    dummyPos: contract.dummy,
+                    originalHands: gs.originalHands,
+                    getPlayableCards: (pos) => {
+                        const h = simHands[pos];
+                        if (!trick.suitLed) return h;
+                        const fs = h.filter(cd => cd.suit === trick.suitLed);
+                        return fs.length > 0 ? fs : h;
+                    }
+                };
+
+                const card = expertAI.playCard(fakeGS, currentPlayer);
+
+                // Remove card from hand
+                const idx = simHands[currentPlayer].findIndex(cd => cd.equals(card));
+                if (idx !== -1) simHands[currentPlayer].splice(idx, 1);
+                trick.playCard(currentPlayer, card);
+
+                currentPlayer = nextPos(currentPlayer);
+            }
+
+            const winner = trick.getWinner();
+            if (winner) {
+                simTricksWon[teamOf(winner)]++;
+                currentLeader = winner;
+            }
+            simTricks.push(trick);
+        }
+
+        const declarerTeam = teamOf(contract.declarer);
+        const expertMade = simTricksWon[declarerTeam];
+        const required = contract.level + 6;
+        const expertDiff = expertMade - required;
+        const actualMade = gs.tricksWon[declarerTeam];
+
+        let html = '<div class="analysis-section"><h4>Jeu de la carte idéal (simulation expert)</h4>';
+
+        html += `<p class="analysis-comment">Levées réalisées par l'expert: <strong>${expertMade}</strong> / ${required} requises — `;
+        if (expertDiff >= 0) {
+            html += `<span style="color:#2ecc71">Contrat réussi${expertDiff > 0 ? ` (+${expertDiff})` : ''}</span>`;
+        } else {
+            html += `<span style="color:#e74c3c">Chute de ${-expertDiff}</span>`;
+        }
+        html += '</p>';
+
+        // Compare with actual play
+        if (expertMade !== actualMade) {
+            const delta = expertMade - actualMade;
+            if (delta > 0) {
+                html += `<p class="analysis-comment" style="color:#f1c40f">L'expert gagne <strong>${delta} levée${delta > 1 ? 's' : ''} de plus</strong> que le jeu réel.</p>`;
+            } else {
+                html += `<p class="analysis-comment" style="color:#2ecc71">Le jeu réel fait <strong>${-delta} levée${-delta > 1 ? 's' : ''} de plus</strong> que la simulation expert.</p>`;
+            }
+        } else {
+            html += `<p class="analysis-comment" style="color:#2ecc71">Le jeu réel a atteint le même résultat que l'expert !</p>`;
+        }
+
+        // Trick by trick table
+        html += '<table style="width:100%; border-collapse:collapse; font-size:0.85em; color:#bbb; margin-top:8px">';
+        html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.1)"><th style="padding:4px;text-align:left">#</th><th>Ouest</th><th>Nord</th><th>Est</th><th>Sud</th><th>Gagnant</th></tr>';
+        for (let i = 0; i < simTricks.length; i++) {
+            const trick = simTricks[i];
+            const winner = trick.getWinner();
+            const winTeam = winner ? teamOf(winner) : '';
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">';
+            html += `<td style="padding:3px"><strong>${i + 1}</strong></td>`;
+            for (const p of ['W', 'N', 'E', 'S']) {
+                const card = trick.cards[p];
+                if (card) {
+                    const isRed = card.isRed;
+                    const style = isRed ? 'color:#e74c3c' : 'color:#fff';
+                    const bold = p === winner ? 'font-weight:bold;text-decoration:underline' : '';
+                    html += `<td style="text-align:center;padding:3px;${style};${bold}">${card.toString()}</td>`;
+                } else {
+                    html += '<td style="text-align:center;padding:3px">-</td>';
+                }
+            }
+            html += `<td style="text-align:center;padding:3px;color:${winTeam === teamOf(gs.humanPos) ? '#2ecc71' : '#e74c3c'}">${winner ? POSITION_FR[winner] : '-'}</td>`;
+            html += '</tr>';
+        }
+        html += '</table></div>';
+
+        return html;
+    }
+
+    _conventionLabel() {
+        const labels = {
+            sef: 'SEF',
+            sayc: 'SAYC',
+            '2over1': '2/1 GF',
+            acol: 'Acol',
+            standard: 'Standard Am.'
+        };
+        return labels[this.settings.convention] || this.settings.convention;
     }
 
     _generateExpertAdvice(gs) {
