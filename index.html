@@ -14,81 +14,94 @@
         <h1 class="title">♠ MyBridge ♥</h1>
         <p class="subtitle">Jeu de Bridge en ligne</p>
 
-        <!-- Seat Selection -->
-        <div class="settings-section">
-            <h2>Choisissez votre place</h2>
-            <div class="seat-picker">
-                <div class="seat-table">
-                    <div class="seat-pos seat-north" data-seat="N">
-                        <div class="seat-label">Nord</div>
-                        <div class="seat-icon">N</div>
-                    </div>
-                    <div class="seat-pos seat-west" data-seat="W">
-                        <div class="seat-label">Ouest</div>
-                        <div class="seat-icon">O</div>
-                    </div>
-                    <div class="seat-center-table"></div>
-                    <div class="seat-pos seat-east" data-seat="E">
-                        <div class="seat-label">Est</div>
-                        <div class="seat-icon">E</div>
-                    </div>
-                    <div class="seat-pos seat-south selected" data-seat="S">
-                        <div class="seat-label">Sud</div>
-                        <div class="seat-icon">S</div>
+        <!-- Main Tabs -->
+        <div class="main-tabs">
+            <button class="main-tab active" id="main-tab-settings" data-main-tab="settings-panel">Paramètres</button>
+            <button class="main-tab" id="main-tab-community" data-main-tab="community-panel">Joueurs</button>
+        </div>
+
+        <!-- ====== SETTINGS TAB ====== -->
+        <div class="main-tab-panel" id="settings-panel">
+            <!-- Seat Selection -->
+            <div class="settings-section">
+                <h2>Choisissez votre place</h2>
+                <div class="seat-picker">
+                    <div class="seat-table">
+                        <div class="seat-pos seat-north" data-seat="N">
+                            <div class="seat-label">Nord</div>
+                            <div class="seat-icon">N</div>
+                        </div>
+                        <div class="seat-pos seat-west" data-seat="W">
+                            <div class="seat-label">Ouest</div>
+                            <div class="seat-icon">O</div>
+                        </div>
+                        <div class="seat-center-table"></div>
+                        <div class="seat-pos seat-east" data-seat="E">
+                            <div class="seat-label">Est</div>
+                            <div class="seat-icon">E</div>
+                        </div>
+                        <div class="seat-pos seat-south selected" data-seat="S">
+                            <div class="seat-label">Sud</div>
+                            <div class="seat-icon">S</div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Difficulty -->
-        <div class="settings-section">
-            <h2>Niveau de difficulté</h2>
-            <div class="option-group">
-                <button class="option-btn" data-level="beginner">Débutant</button>
-                <button class="option-btn selected" data-level="intermediate">Intermédiaire</button>
-                <button class="option-btn" data-level="advanced">Avancé</button>
-                <button class="option-btn" data-level="expert">Expert</button>
+            <!-- Difficulty -->
+            <div class="settings-section">
+                <h2>Niveau de difficulté</h2>
+                <div class="option-group">
+                    <button class="option-btn" data-level="beginner">Débutant</button>
+                    <button class="option-btn selected" data-level="intermediate">Intermédiaire</button>
+                    <button class="option-btn" data-level="advanced">Avancé</button>
+                    <button class="option-btn" data-level="expert">Expert</button>
+                </div>
             </div>
-        </div>
 
-        <!-- Conventions -->
-        <div class="settings-section">
-            <h2>Conventions d'enchères</h2>
-            <p class="hint-text">Double-cliquez sur une convention pour voir sa description</p>
-            <div class="option-group">
-                <button class="option-btn convention-btn selected" data-convention="sef">SEF (Standard Français)</button>
-                <button class="option-btn convention-btn" data-convention="sayc">SAYC</button>
-                <button class="option-btn convention-btn" data-convention="2over1">2/1 Game Forcing</button>
-                <button class="option-btn convention-btn" data-convention="acol">Acol</button>
-                <button class="option-btn convention-btn" data-convention="standard">Standard American</button>
+            <!-- Conventions -->
+            <div class="settings-section">
+                <h2>Conventions d'enchères</h2>
+                <p class="hint-text">Double-cliquez sur une convention pour voir sa description</p>
+                <div class="option-group">
+                    <button class="option-btn convention-btn selected" data-convention="sef">SEF (Standard Français)</button>
+                    <button class="option-btn convention-btn" data-convention="sayc">SAYC</button>
+                    <button class="option-btn convention-btn" data-convention="2over1">2/1 Game Forcing</button>
+                    <button class="option-btn convention-btn" data-convention="acol">Acol</button>
+                    <button class="option-btn convention-btn" data-convention="standard">Standard American</button>
+                </div>
             </div>
-        </div>
 
-        <!-- Scoring -->
-        <div class="settings-section">
-            <h2>Mode de score</h2>
-            <div class="option-group">
-                <button class="option-btn scoring-btn selected" data-scoring="duplicate">Duplicate</button>
-                <button class="option-btn scoring-btn" data-scoring="rubber">Rubber</button>
+            <!-- Scoring -->
+            <div class="settings-section">
+                <h2>Mode de score</h2>
+                <div class="option-group">
+                    <button class="option-btn scoring-btn selected" data-scoring="duplicate">Duplicate</button>
+                    <button class="option-btn scoring-btn" data-scoring="rubber">Rubber</button>
+                </div>
             </div>
-        </div>
 
-        <!-- Trick Display Time -->
-        <div class="settings-section">
-            <h2>Temps d'affichage des levées</h2>
-            <div class="slider-group">
-                <input type="range" id="trick-delay-slider" class="slider" min="1" max="10" step="0.5" value="2">
-                <span class="slider-value" id="trick-delay-value">2.0s</span>
+            <!-- Trick Display Time -->
+            <div class="settings-section">
+                <h2>Temps d'affichage des levées</h2>
+                <div class="slider-group">
+                    <input type="range" id="trick-delay-slider" class="slider" min="1" max="10" step="0.5" value="2">
+                    <span class="slider-value" id="trick-delay-value">2.0s</span>
+                </div>
+                <p class="hint-text">Durée pendant laquelle les 4 cartes jouées restent visibles avant de disparaître</p>
             </div>
-            <p class="hint-text">Durée pendant laquelle les 4 cartes jouées restent visibles avant de disparaître</p>
+
+            <button id="start-game-btn" class="primary-btn">Commencer la partie</button>
         </div>
 
-        <button id="start-game-btn" class="primary-btn">Commencer la partie</button>
+        <!-- ====== COMMUNITY TAB ====== -->
+        <div class="main-tab-panel hidden" id="community-panel">
+            <!-- My Rating Summary -->
+            <div class="my-rating-box" id="my-rating-box"></div>
 
-        <!-- Player List + Rankings Tabs -->
-        <div class="settings-section" style="margin-top: 30px;">
+            <!-- Sub-tabs: Players / Rankings -->
             <div class="community-tabs">
-                <button class="community-tab active" id="tab-players" data-tab="players">Joueurs</button>
+                <button class="community-tab active" id="tab-players" data-tab="players">En ligne</button>
                 <button class="community-tab" id="tab-rankings" data-tab="rankings">Classement</button>
             </div>
 
@@ -101,11 +114,12 @@
 
             <!-- Rankings -->
             <div class="community-panel hidden" id="panel-rankings">
-                <div class="my-rating-box" id="my-rating-box"></div>
                 <div class="rankings-list" id="rankings-list">
                     <p class="hint-text">Chargement...</p>
                 </div>
             </div>
+
+            <button id="start-game-btn-2" class="primary-btn" style="margin-top: 20px;">Commencer la partie</button>
         </div>
     </div>
 </div>

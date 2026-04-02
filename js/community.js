@@ -52,6 +52,17 @@ class CommunityManager {
                 this.myUserId = data.id;
                 this.loadPlayers();
                 this._loadUnreadCounts();
+                this._loadMyRating();
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    async _loadMyRating() {
+        try {
+            const res = await fetch('/api/my-rating');
+            if (res.ok) {
+                const myRating = await res.json();
+                this._renderMyRating(myRating);
             }
         } catch (e) { /* ignore */ }
     }
