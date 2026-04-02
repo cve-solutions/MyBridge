@@ -428,9 +428,9 @@ body {
     grid-template-rows: 1fr 2fr 1fr;
     gap: 5px;
     padding: 10px;
-    background: radial-gradient(ellipse at center, #2d5a27 0%, #1e3d1a 60%, #152e12 100%);
-    border: 8px solid #3a2a1a;
-    box-shadow: inset 0 0 50px rgba(0,0,0,0.3);
+    background: radial-gradient(ellipse at center, #1f7a1f 0%, #186018 40%, #0e4a0e 70%, #0a350a 100%);
+    border: none;
+    box-shadow: inset 0 0 80px rgba(0,0,0,0.4);
     min-height: 0;
     overflow: hidden;
 }
@@ -472,28 +472,35 @@ body {
 }
 
 .player-label {
-    font-size: 0.85em;
-    color: #aaa;
-    margin-bottom: 5px;
-    padding: 2px 12px;
-    background: rgba(0,0,0,0.3);
-    border-radius: 10px;
-    white-space: nowrap;
+    display: none;
 }
 
 .player-label.active-player {
-    color: #fff;
-    background: rgba(233,69,96,0.5);
-    animation: pulse 1.5s infinite;
+    display: none;
 }
 
 .player-label.dummy-label {
-    color: #f1c40f;
+    display: none;
 }
 
 @keyframes pulse {
     0%, 100% { box-shadow: 0 0 5px rgba(233,69,96,0.3); }
     50% { box-shadow: 0 0 15px rgba(233,69,96,0.6); }
+}
+
+@keyframes badge-pulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(232, 160, 32, 0.4); }
+    50% { box-shadow: 0 0 16px rgba(232, 160, 32, 0.8); }
+}
+
+.pos-badge.active-badge .badge-name {
+    background: rgba(232, 160, 32, 0.85);
+    color: #000;
+    animation: badge-pulse 1.5s infinite;
+}
+
+.pos-badge.dummy-badge .badge-name {
+    color: #f1c40f;
 }
 
 /* Cards */
@@ -575,17 +582,26 @@ body {
 }
 
 .cards-container .card.face-down {
-    background: linear-gradient(135deg, #1a3a8a 0%, #2a4a9a 50%, #1a3a8a 100%);
-    background-image: repeating-linear-gradient(
-        45deg,
-        transparent,
-        transparent 5px,
-        rgba(255,255,255,0.05) 5px,
-        rgba(255,255,255,0.05) 10px
-    );
-    background-color: #1a3a8a;
+    background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #1a237e 100%);
+    background-image:
+        repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 4px,
+            rgba(255,255,255,0.04) 4px,
+            rgba(255,255,255,0.04) 8px
+        ),
+        repeating-linear-gradient(
+            -45deg,
+            transparent,
+            transparent 4px,
+            rgba(255,255,255,0.04) 4px,
+            rgba(255,255,255,0.04) 8px
+        );
+    background-color: #1a237e;
     color: transparent;
-    border-color: #0f2870;
+    border-color: #0d1757;
+    box-shadow: 1px 2px 8px rgba(0,0,0,0.5);
 }
 
 /* Horizontal cards overlap */
@@ -603,6 +619,113 @@ body {
     justify-content: center;
     position: relative;
     min-height: 0;
+    border: 3px solid #e8a020;
+    border-radius: 6px;
+    box-shadow: 0 0 15px rgba(232, 160, 32, 0.15);
+}
+
+/* Position badges on center rectangle edges */
+.pos-badge {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 20;
+    font-size: 0.78em;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.pos-badge .badge-letter {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.85em;
+    color: #fff;
+}
+
+.pos-badge .badge-letter.human {
+    background: #e8a020;
+}
+
+.pos-badge .badge-letter.ai {
+    background: #2eaa2e;
+}
+
+.pos-badge .badge-name {
+    background: rgba(20, 20, 40, 0.85);
+    color: #ddd;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.pos-badge.badge-top {
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pos-badge.badge-bottom {
+    bottom: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pos-badge.badge-left {
+    left: 0;
+    top: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+.pos-badge.badge-right {
+    right: 0;
+    top: 50%;
+    transform: translate(50%, -50%) rotate(90deg);
+}
+
+/* Trick counters on the table */
+.table-trick-counters {
+    position: absolute;
+    bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 20;
+    pointer-events: none;
+    background: rgba(0,0,0,0.45);
+    padding: 3px 10px;
+    border-radius: 8px;
+}
+
+.table-trick-counters.counters-left {
+    left: 10px;
+}
+
+.table-trick-counters.counters-right {
+    right: 10px;
+}
+
+.trick-counter {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-weight: bold;
+}
+
+.trick-counter .counter-label {
+    font-size: 0.7em;
+    color: #aaa;
+}
+
+.trick-counter .counter-value {
+    font-size: 1.1em;
+    color: #fff;
 }
 
 /* Bidding Panel */
@@ -915,4 +1038,7 @@ body {
     .seat-table { width: 220px; height: 220px; }
     #bidding-panel { padding: 10px; }
     .bid-level-btn, .bid-suit-btn { width: 36px; height: 32px; font-size: 0.9em; }
+
+    .pos-badge .badge-name { font-size: 0.75em; padding: 1px 5px; }
+    .pos-badge .badge-letter { width: 18px; height: 18px; font-size: 0.75em; }
 }
