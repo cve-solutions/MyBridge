@@ -182,6 +182,36 @@ class BridgeApp {
             trickEl.classList.remove('trick-pos-top', 'trick-pos-bottom', 'trick-pos-left', 'trick-pos-right');
             trickEl.classList.add(`trick-pos-${map[pos]}`);
         }
+
+        // Update position badges on center rectangle
+        this._updatePositionBadges();
+    }
+
+    _updatePositionBadges() {
+        const map = this._screenMap;
+        const gs = this.gameState;
+        const badgeLetters = { N: 'N', S: 'S', E: 'E', W: 'O' };
+
+        for (const pos of POSITIONS) {
+            const screenPos = map[pos];
+            const badgeEl = document.getElementById(`badge-${screenPos}`);
+            if (!badgeEl) continue;
+
+            const letterEl = badgeEl.querySelector('.badge-letter');
+            const nameEl = badgeEl.querySelector('.badge-name');
+
+            letterEl.textContent = badgeLetters[pos];
+            letterEl.classList.remove('human', 'ai');
+            letterEl.classList.add(pos === gs.humanPos ? 'human' : 'ai');
+
+            let name = POSITION_FR[pos];
+            if (pos === gs.humanPos) {
+                name += ' (Vous)';
+            } else {
+                name += ' (IA)';
+            }
+            nameEl.textContent = name;
+        }
     }
 
     _startDeal() {
@@ -229,6 +259,12 @@ class BridgeApp {
 
         document.getElementById('tricks-ns').textContent = gs.tricksWon.NS;
         document.getElementById('tricks-ew').textContent = gs.tricksWon.EW;
+
+        // Update table trick counters
+        const tableNs = document.getElementById('table-tricks-ns');
+        const tableEw = document.getElementById('table-tricks-ew');
+        if (tableNs) tableNs.textContent = gs.tricksWon.NS;
+        if (tableEw) tableEw.textContent = gs.tricksWon.EW;
     }
 
     // ==================== HAND RENDERING ====================
@@ -278,6 +314,8 @@ class BridgeApp {
 
     _updatePlayerLabels() {
         const gs = this.gameState;
+        const map = this._screenMap;
+
         for (const pos of POSITIONS) {
             const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
             const label = document.getElementById(`label-${posName}`);
@@ -309,6 +347,37 @@ class BridgeApp {
             }
             if (gs.phase === 'playing' && gs.dummyPos === pos) {
                 label.classList.add('dummy-label');
+            }
+
+            // Update position badges on center rectangle
+            if (map) {
+                const screenPos = map[pos];
+                const badgeEl = document.getElementById(`badge-${screenPos}`);
+                if (badgeEl) {
+                    const nameEl = badgeEl.querySelector('.badge-name');
+
+                    let badgeText = POSITION_FR[pos];
+                    if (pos === gs.humanPos) {
+                        badgeText += ' (Vous)';
+                    } else {
+                        badgeText += ' (IA)';
+                    }
+                    if (gs.phase === 'playing' && gs.contract) {
+                        if (pos === gs.declarerPos) badgeText += ' - Décl.';
+                        else if (pos === gs.dummyPos) badgeText += ' - Mort';
+                    }
+                    nameEl.textContent = badgeText;
+
+                    badgeEl.classList.remove('active-badge', 'dummy-badge');
+
+                    const isActive = (gs.phase === 'bidding' && gs.bidding && gs.bidding.currentBidder === pos && !gs.bidding.isComplete) ||
+                                     (gs.phase === 'playing' && gs.currentTrick && gs.currentTrick.currentPlayer === pos);
+                    if (isActive) badgeEl.classList.add('active-badge');
+
+                    if (gs.phase === 'playing' && gs.dummyPos === pos) {
+                        badgeEl.classList.add('dummy-badge');
+                    }
+                }
             }
         }
     }

@@ -116,6 +116,38 @@
 
             <!-- Center Area (Trick / Bidding) -->
             <div class="center-area">
+                <!-- Position badges on edges of center rectangle -->
+                <div class="pos-badge badge-top" id="badge-top">
+                    <span class="badge-letter ai">N</span>
+                    <span class="badge-name">Nord (IA)</span>
+                </div>
+                <div class="pos-badge badge-bottom" id="badge-bottom">
+                    <span class="badge-letter human">S</span>
+                    <span class="badge-name">Sud (Vous)</span>
+                </div>
+                <div class="pos-badge badge-left" id="badge-left">
+                    <span class="badge-letter ai">O</span>
+                    <span class="badge-name">Ouest (IA)</span>
+                </div>
+                <div class="pos-badge badge-right" id="badge-right">
+                    <span class="badge-letter ai">E</span>
+                    <span class="badge-name">Est (IA)</span>
+                </div>
+
+                <!-- Trick counters on the center area -->
+                <div class="table-trick-counters counters-left">
+                    <div class="trick-counter" id="table-counter-ns">
+                        <span class="counter-label">NS</span>
+                        <span class="counter-value" id="table-tricks-ns">0</span>
+                    </div>
+                </div>
+                <div class="table-trick-counters counters-right">
+                    <div class="trick-counter" id="table-counter-ew">
+                        <span class="counter-label">EO</span>
+                        <span class="counter-value" id="table-tricks-ew">0</span>
+                    </div>
+                </div>
+
                 <div id="bidding-panel" class="panel hidden">
                     <h3>Enchères</h3>
                     <div id="bidding-history" class="bidding-history">
