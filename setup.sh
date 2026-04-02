@@ -17,7 +17,7 @@ APP_USER="mybridge"
 APP_GROUP="mybridge"
 NODE_VERSION="20"
 REPO_URL="https://github.com/cve-solutions/MyBridge.git"
-BRANCH="claude/bridge-card-game-fFmpj"
+BRANCH="main"
 SERVICE_NAME="mybridge"
 CERTBOT_EMAIL=""  # Will be asked during install
 
