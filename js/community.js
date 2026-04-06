@@ -82,9 +82,14 @@ class CommunityManager {
             } catch (e) { /* ignore */ }
         };
 
+        this.ws.onopen = () => {
+            this._wsRetryDelay = 1000;
+        };
+
         this.ws.onclose = () => {
-            // Reconnect after 3 seconds
-            setTimeout(() => this._connectWebSocket(), 3000);
+            // Reconnect with exponential backoff
+            this._wsRetryDelay = Math.min((this._wsRetryDelay || 1000) * 2, 30000);
+            setTimeout(() => this._connectWebSocket(), this._wsRetryDelay);
         };
 
         this.ws.onerror = () => { /* handled by onclose */ };

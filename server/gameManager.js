@@ -287,6 +287,16 @@ function leaveTable(userId, tableId) {
             seats: { ...table.seats },
             seatNames: { ...table.seatNames }
         });
+
+        // If game is in progress and it was this player's turn, trigger AI to take over
+        if (table.status === 'playing' && table.gameState) {
+            const gs = table.gameState;
+            const isTheirTurn = (gs.phase === 'bidding' && gs.bidding && gs.bidding.currentBidder === pos) ||
+                (gs.phase === 'playing' && gs.currentTrick && gs.currentTrick.currentPlayer === pos);
+            if (isTheirTurn) {
+                _processNextAction(table);
+            }
+        }
     }
     table.observers.delete(userId);
 
@@ -620,7 +630,7 @@ function processHumanClaim(userId, tableId) {
 
     // Award all remaining tricks to the declaring team
     const declarerTeam = teamOf(declarerPos);
-    const remaining = 13 - gs.tricks.length;
+    const remaining = Math.max(0, 13 - gs.tricks.length);
     gs.tricksWon[declarerTeam] += remaining;
     gs.phase = 'scoring';
 

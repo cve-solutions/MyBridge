@@ -129,11 +129,14 @@ class BridgeApp {
         }
 
         // Start game (both buttons)
-        document.getElementById('start-game-btn').addEventListener('click', () => this._startGame());
-        document.getElementById('start-game-btn-2').addEventListener('click', () => this._startGame());
+        const startBtn = document.getElementById('start-game-btn');
+        if (startBtn) startBtn.addEventListener('click', () => this._startGame());
+        const startBtn2 = document.getElementById('start-game-btn-2');
+        if (startBtn2) startBtn2.addEventListener('click', () => this._startGame());
 
         // Settings button (back to settings)
-        document.getElementById('settings-btn').addEventListener('click', () => {
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) settingsBtn.addEventListener('click', () => {
             if (this.community) this.community.notifyLeaveGame();
             if (this.community) this.community.loadPlayers();
             this._showScreen('settings-screen');
@@ -154,50 +157,67 @@ class BridgeApp {
             el.addEventListener('click', () => this._selectBidSuit(el.dataset.suit));
         });
 
-        document.getElementById('bid-pass').addEventListener('click', () => this._humanBid('pass'));
-        document.getElementById('bid-double').addEventListener('click', () => this._humanBid('double'));
-        document.getElementById('bid-redouble').addEventListener('click', () => this._humanBid('redouble'));
-        document.getElementById('bid-confirm').addEventListener('click', () => this._humanBid('bid'));
+        const bidPass = document.getElementById('bid-pass');
+        if (bidPass) bidPass.addEventListener('click', () => this._humanBid('pass'));
+        const bidDouble = document.getElementById('bid-double');
+        if (bidDouble) bidDouble.addEventListener('click', () => this._humanBid('double'));
+        const bidRedouble = document.getElementById('bid-redouble');
+        if (bidRedouble) bidRedouble.addEventListener('click', () => this._humanBid('redouble'));
+        const bidConfirm = document.getElementById('bid-confirm');
+        if (bidConfirm) bidConfirm.addEventListener('click', () => this._humanBid('bid'));
 
         // Score screen
-        document.getElementById('next-deal-btn').addEventListener('click', () => this._nextDeal());
-        document.getElementById('analyze-btn').addEventListener('click', () => this._showAnalysis());
-        document.getElementById('back-settings-btn').addEventListener('click', () => {
+        const nextDealBtn = document.getElementById('next-deal-btn');
+        if (nextDealBtn) nextDealBtn.addEventListener('click', () => this._nextDeal());
+        const analyzeBtn = document.getElementById('analyze-btn');
+        if (analyzeBtn) analyzeBtn.addEventListener('click', () => this._showAnalysis());
+        const backSettingsBtn = document.getElementById('back-settings-btn');
+        if (backSettingsBtn) backSettingsBtn.addEventListener('click', () => {
             if (this.community) this.community.notifyLeaveGame();
             if (this.community) this.community.loadPlayers();
             this._showScreen('settings-screen');
         });
 
         // Modal close buttons
-        document.getElementById('convention-close-btn').addEventListener('click', (e) => {
+        const conventionCloseBtn = document.getElementById('convention-close-btn');
+        if (conventionCloseBtn) conventionCloseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this._closeModal('convention-modal');
         });
-        document.getElementById('analysis-close-btn').addEventListener('click', (e) => {
+        const analysisCloseBtn = document.getElementById('analysis-close-btn');
+        if (analysisCloseBtn) analysisCloseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this._closeModal('analysis-modal');
         });
-        document.getElementById('tricks-modal-close').addEventListener('click', (e) => {
+        const tricksModalClose = document.getElementById('tricks-modal-close');
+        if (tricksModalClose) tricksModalClose.addEventListener('click', (e) => {
             e.stopPropagation();
             this._closeModal('tricks-modal');
         });
-        document.getElementById('bidding-history-modal-close').addEventListener('click', (e) => {
+        const biddingHistoryModalClose = document.getElementById('bidding-history-modal-close');
+        if (biddingHistoryModalClose) biddingHistoryModalClose.addEventListener('click', (e) => {
             e.stopPropagation();
             this._closeModal('bidding-history-modal');
         });
-        document.getElementById('claim-cancel-btn').addEventListener('click', () => {
+        const claimCancelBtn = document.getElementById('claim-cancel-btn');
+        if (claimCancelBtn) claimCancelBtn.addEventListener('click', () => {
             this._closeModal('claim-modal');
         });
-        document.getElementById('claim-confirm-btn').addEventListener('click', () => {
+        const claimConfirmBtn = document.getElementById('claim-confirm-btn');
+        if (claimConfirmBtn) claimConfirmBtn.addEventListener('click', () => {
             this._closeModal('claim-modal');
             this._executeClaim();
         });
 
         // Game action buttons
-        document.getElementById('show-tricks-btn').addEventListener('click', () => this._showPreviousTricks());
-        document.getElementById('show-bidding-btn').addEventListener('click', () => this._showBiddingHistoryModal());
-        document.getElementById('undo-btn').addEventListener('click', () => this._undoLastCard());
-        document.getElementById('claim-btn').addEventListener('click', () => this._promptClaim());
+        const showTricksBtn = document.getElementById('show-tricks-btn');
+        if (showTricksBtn) showTricksBtn.addEventListener('click', () => this._showPreviousTricks());
+        const showBiddingBtn = document.getElementById('show-bidding-btn');
+        if (showBiddingBtn) showBiddingBtn.addEventListener('click', () => this._showBiddingHistoryModal());
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) undoBtn.addEventListener('click', () => this._undoLastCard());
+        const claimBtn = document.getElementById('claim-btn');
+        if (claimBtn) claimBtn.addEventListener('click', () => this._promptClaim());
 
         // Close modals on overlay click
         document.querySelectorAll('.modal-overlay').forEach(modal => {
@@ -550,7 +570,7 @@ class BridgeApp {
         // Update header based on dealer position
         const gs = this.gameState;
         const header = document.querySelector('.bid-header');
-        header.innerHTML = '<span>Ouest</span><span>Nord</span><span>Est</span><span>Sud</span>';
+        if (header) header.innerHTML = '<span>Ouest</span><span>Nord</span><span>Est</span><span>Sud</span>';
     }
 
     _updateBiddingHistory() {
