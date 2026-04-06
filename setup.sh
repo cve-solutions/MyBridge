@@ -126,10 +126,21 @@ do_update() {
     sudo -u "$APP_USER" npm install --omit=dev
 
     log_info "Mise à jour de la configuration NGINX..."
+    # Remove any old domain configs to prevent conflicts
+    for f in /etc/nginx/sites-enabled/*; do
+        if [[ "$(basename "$f")" != "${DOMAIN}" && -f "$f" ]]; then
+            rm -f "$f"
+            log_info "Suppression ancien site NGINX: $(basename "$f")"
+        fi
+    done
     cp "$APP_DIR/nginx/bridge.conf" "/etc/nginx/sites-available/${DOMAIN}"
+    ln -sf "/etc/nginx/sites-available/${DOMAIN}" "/etc/nginx/sites-enabled/${DOMAIN}"
     if [[ "$APP_DIR" != "/opt/mybridge" ]]; then
         sed -i "s|root /opt/mybridge;|root ${APP_DIR};|" "/etc/nginx/sites-available/${DOMAIN}"
     fi
+
+    # Ensure SSL certificate exists (self-signed fallback)
+    _ensure_ssl_cert
 
     log_info "Rechargement NGINX..."
     nginx -t && systemctl reload nginx
@@ -306,6 +317,55 @@ EOF
     log_ok "Service systemd configuré."
 }
 
+# ==================== SSL HELPER ====================
+# Ensures an SSL certificate exists for $DOMAIN.
+# Tries Let's Encrypt first, falls back to self-signed.
+_ensure_ssl_cert() {
+    local CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
+
+    # Already have a cert? Done.
+    if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
+        log_ok "Certificat SSL existe: ${CERT_DIR}"
+        return 0
+    fi
+
+    # Try Let's Encrypt (non-interactive, may fail if DNS not ready)
+    if command -v certbot &>/dev/null; then
+        log_info "Tentative Let's Encrypt pour ${DOMAIN}..."
+        local EMAIL_OPT=""
+        if [[ -n "${CERTBOT_EMAIL:-}" ]]; then
+            EMAIL_OPT="--email ${CERTBOT_EMAIL}"
+        else
+            EMAIL_OPT="--register-unsafely-without-email"
+        fi
+        if certbot certonly \
+            --webroot \
+            --webroot-path /var/www/certbot \
+            --domain "$DOMAIN" \
+            $EMAIL_OPT \
+            --agree-tos \
+            --non-interactive 2>/dev/null; then
+            log_ok "Certificat Let's Encrypt obtenu."
+            return 0
+        fi
+        log_warn "Let's Encrypt a échoué. Création d'un certificat auto-signé."
+    fi
+
+    # Fallback: self-signed certificate
+    log_info "Génération du certificat auto-signé pour ${DOMAIN}..."
+    mkdir -p "${CERT_DIR}"
+    openssl req -x509 -nodes -days 365 \
+        -newkey rsa:2048 \
+        -keyout "${CERT_DIR}/privkey.pem" \
+        -out "${CERT_DIR}/fullchain.pem" \
+        -subj "/CN=${DOMAIN}" \
+        2>/dev/null
+    # chain.pem = same as fullchain for self-signed
+    cp "${CERT_DIR}/fullchain.pem" "${CERT_DIR}/chain.pem"
+    log_ok "Certificat auto-signé créé (valide 365 jours)."
+    log_warn "Pensez à configurer Let's Encrypt plus tard pour un vrai certificat."
+}
+
 # ==================== NGINX ====================
 setup_nginx() {
     log_info "Configuration de NGINX..."
@@ -322,8 +382,14 @@ setup_nginx() {
     # Create certbot webroot
     mkdir -p /var/www/certbot
 
-    # Remove default nginx site
+    # Remove default and any old domain nginx sites
     rm -f /etc/nginx/sites-enabled/default
+    for f in /etc/nginx/sites-enabled/*; do
+        if [[ "$(basename "$f")" != "${DOMAIN}" && -f "$f" ]]; then
+            rm -f "$f"
+            log_info "Suppression ancien site: $(basename "$f")"
+        fi
+    done
 
     # First, create a temporary HTTP-only config for certbot
     cat > "/etc/nginx/sites-available/${DOMAIN}" << 'TMPEOF'
@@ -351,41 +417,30 @@ TMPEOF
     log_ok "NGINX configuré (HTTP temporaire)."
 }
 
-# ==================== LET'S ENCRYPT ====================
+# ==================== SSL ====================
 setup_ssl() {
-    log_info "Configuration du certificat SSL Let's Encrypt..."
+    log_info "Configuration du certificat SSL..."
 
-    # Ask for email if not set
+    # Ask for email (optional, used for Let's Encrypt)
     if [[ -z "$CERTBOT_EMAIL" ]]; then
-        read -rp "Adresse email pour Let's Encrypt (notifications de renouvellement): " CERTBOT_EMAIL
+        read -rp "Adresse email pour Let's Encrypt (optionnel, Entrée pour ignorer): " CERTBOT_EMAIL
     fi
 
-    if [[ -z "$CERTBOT_EMAIL" ]]; then
-        log_error "Email requis pour Let's Encrypt."
-        exit 1
-    fi
+    # Ensure cert exists (Let's Encrypt or self-signed fallback)
+    _ensure_ssl_cert
 
-    # Check if certificate already exists
-    if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
-        log_ok "Certificat SSL existe déjà."
-    else
-        log_info "Demande du certificat SSL pour ${DOMAIN}..."
-        certbot certonly \
-            --webroot \
-            --webroot-path /var/www/certbot \
-            --domain "$DOMAIN" \
-            --email "$CERTBOT_EMAIL" \
-            --agree-tos \
-            --non-interactive \
-            --force-renewal
-        log_ok "Certificat SSL obtenu."
-    fi
+    # Remove any old domain configs to avoid conflicts
+    for f in /etc/nginx/sites-enabled/*; do
+        if [[ "$(basename "$f")" != "${DOMAIN}" && -f "$f" ]]; then
+            rm -f "$f"
+        fi
+    done
 
-    # Now install the full NGINX config with SSL
+    # Install the full NGINX config with SSL
     log_info "Installation de la configuration NGINX complète..."
     cp "$APP_DIR/nginx/bridge.conf" "/etc/nginx/sites-available/${DOMAIN}"
+    ln -sf "/etc/nginx/sites-available/${DOMAIN}" "/etc/nginx/sites-enabled/${DOMAIN}"
 
-    # Update the root path if APP_DIR differs from default
     if [[ "$APP_DIR" != "/opt/mybridge" ]]; then
         sed -i "s|root /opt/mybridge;|root ${APP_DIR};|" "/etc/nginx/sites-available/${DOMAIN}"
     fi
@@ -394,8 +449,7 @@ setup_ssl() {
     systemctl reload nginx
     log_ok "NGINX configuré avec SSL."
 
-    # Setup auto-renewal
-    log_info "Configuration du renouvellement automatique..."
+    # Setup auto-renewal (only useful with Let's Encrypt, harmless otherwise)
     cat > /etc/cron.d/certbot-mybridge << EOF
 # Renouvellement automatique du certificat Let's Encrypt
 0 3 * * * root certbot renew --quiet --post-hook "systemctl reload nginx"
