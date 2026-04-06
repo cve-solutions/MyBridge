@@ -598,3 +598,8 @@ class BridgeAI {
         return playable[playable.length - 1];
     }
 }
+
+// ==================== CommonJS export for Node.js server use ====================
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { BridgeAI };
+}

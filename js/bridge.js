@@ -93,11 +93,12 @@ function dealCards() {
 
 // ==================== BID ====================
 class Bid {
-    constructor(type, level, suit, player) {
+    constructor(type, level, suit, player, alertText = null) {
         this.type = type; // 'bid', 'pass', 'double', 'redouble'
         this.level = level; // 1-7 for bids
         this.suit = suit;   // C, D, H, S, NT for bids
         this.player = player;
+        this.alertText = alertText; // Optional alert description (artificial bids)
     }
 
     get index() {
@@ -119,12 +120,13 @@ class Bid {
     }
 
     toDisplayHTML() {
-        if (this.type === 'pass') return '<span class="pass">Passe</span>';
-        if (this.type === 'double') return '<span class="double">X</span>';
-        if (this.type === 'redouble') return '<span class="redouble">XX</span>';
+        const alertBadge = this.alertText ? '<span class="bid-alert-badge" title="' + this.alertText.replace(/"/g, '\'') + '">!</span>' : '';
+        if (this.type === 'pass') return '<span class="pass">Passe</span>' + alertBadge;
+        if (this.type === 'double') return '<span class="double">X</span>' + alertBadge;
+        if (this.type === 'redouble') return '<span class="redouble">XX</span>' + alertBadge;
         const suitStr = this.suit === 'NT' ? 'SA' :
             `<span class="${isRedSuit(this.suit) ? 'red' : ''}">${SUIT_SYMBOLS[this.suit]}</span>`;
-        return `${this.level}${suitStr}`;
+        return `${this.level}${suitStr}${alertBadge}`;
     }
 }
 
@@ -611,4 +613,133 @@ class GameState {
         const isVuln = isVulnerable(this.contract.declarer, this.vulnerability);
         return calculateScore(this.contract, tricksMade, isVuln);
     }
+
+    // ==================== SNAPSHOT / UNDO ====================
+
+    snapshot() {
+        const hands = {};
+        for (const pos of POSITIONS) {
+            hands[pos] = this.hands[pos].map(c => new Card(c.suit, c.rank));
+        }
+
+        let trickData = null;
+        if (this.currentTrick) {
+            trickData = {
+                leader: this.currentTrick.leader,
+                trump: this.currentTrick.trump,
+                cards: {},
+                order: [...this.currentTrick.order],
+                suitLed: this.currentTrick.suitLed
+            };
+            for (const [p, card] of Object.entries(this.currentTrick.cards)) {
+                trickData.cards[p] = new Card(card.suit, card.rank);
+            }
+        }
+
+        // Deep-copy completed tricks
+        const tricks = this.tricks.map(t => {
+            const tc = new Trick(t.leader, t.trump);
+            for (const [p, card] of Object.entries(t.cards)) {
+                tc.cards[p] = new Card(card.suit, card.rank);
+            }
+            tc.order = [...t.order];
+            tc.suitLed = t.suitLed;
+            return tc;
+        });
+
+        return {
+            hands,
+            trickData,
+            tricks,
+            tricksWon: { ...this.tricksWon },
+            phase: this.phase
+        };
+    }
+
+    restoreSnapshot(snap) {
+        this.hands = snap.hands;
+        this.tricksWon = { ...snap.tricksWon };
+        this.phase = snap.phase;
+        this.tricks = snap.tricks;
+
+        if (snap.trickData) {
+            const trick = new Trick(snap.trickData.leader, snap.trickData.trump);
+            trick.cards = snap.trickData.cards;
+            trick.order = [...snap.trickData.order];
+            trick.suitLed = snap.trickData.suitLed;
+            this.currentTrick = trick;
+        } else {
+            this.currentTrick = null;
+        }
+    }
+}
+
+// ==================== ALERT DETECTION ====================
+// Detects conventional bids that require an alert in bridge
+function shouldAlert(bid, bidding, convention) {
+    if (bid.type !== 'bid' && bid.type !== 'double') return null;
+
+    const bids = bidding.bids;
+    const lastRealBid = bidding.lastBid;
+    const partner = partnerOf(bid.player);
+    const partnerBids = bids.filter(b => b.player === partner && b.type === 'bid');
+    const myBids = bids.filter(b => b.player === bid.player && b.type === 'bid');
+    const isOpening = myBids.length === 0 && partnerBids.length === 0;
+    const isResponse = myBids.length === 0 && partnerBids.length > 0;
+
+    if (bid.type === 'bid') {
+        // 2C artificial strong opening (nearly all conventions)
+        if (isOpening && bid.level === 2 && bid.suit === 'C') {
+            return 'Bicolore fort ou main forte (20+ HCP), artificiel';
+        }
+
+        // Stayman: 2C response to 1NT partner opening
+        if (isResponse && bid.level === 2 && bid.suit === 'C') {
+            const partnerOpened1NT = partnerBids.length > 0 && partnerBids[0].level === 1 && partnerBids[0].suit === 'NT';
+            if (partnerOpened1NT) return 'Stayman — demande une majeure 4e';
+        }
+
+        // Transfers over 1NT (Jacoby): 2D → cœur, 2H → pique
+        if (isResponse && bid.level === 2 && bid.suit === 'D') {
+            const partnerOpened1NT = partnerBids.length > 0 && partnerBids[0].level === 1 && partnerBids[0].suit === 'NT';
+            if (partnerOpened1NT && (convention !== 'acol')) return 'Transfert — indique 5+ cœurs';
+        }
+        if (isResponse && bid.level === 2 && bid.suit === 'H') {
+            const partnerOpened1NT = partnerBids.length > 0 && partnerBids[0].level === 1 && partnerBids[0].suit === 'NT';
+            if (partnerOpened1NT && (convention !== 'acol')) return 'Transfert — indique 5+ piques';
+        }
+
+        // Blackwood 4NT
+        if (bid.level === 4 && bid.suit === 'NT' && lastRealBid && lastRealBid.player !== bid.player) {
+            return 'Blackwood — demande le nombre d\'as';
+        }
+
+        // Gerber 4C over NT
+        if (bid.level === 4 && bid.suit === 'C' && lastRealBid && lastRealBid.suit === 'NT') {
+            return 'Gerber — demande le nombre d\'as';
+        }
+
+        // Negative double
+        if (bid.type === 'double') {
+            const opponentBid = bids.filter(b => b.type === 'bid' &&
+                teamOf(b.player) !== teamOf(bid.player)).slice(-1)[0];
+            if (opponentBid && opponentBid.level <= 2 && partnerBids.length > 0) {
+                return 'Contre négatif — indique les majeures non annoncées';
+            }
+        }
+    }
+
+    return null;
+}
+
+// ==================== CommonJS export for Node.js server use ====================
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        Card, Bid, BiddingManager, Trick, GameState,
+        calculateScore, evaluateHand, dealCards, createDeck, shuffleDeck,
+        getVulnerability, getDealer, isVulnerable,
+        nextPos, partnerOf, teamOf, shouldAlert,
+        POSITIONS, SUITS, RANKS, RANK_VALUES, RANK_DISPLAY,
+        SUIT_SYMBOLS, SUIT_ORDER, HCP_VALUES, POSITION_NAMES, POSITION_FR
+    };
 }
