@@ -211,19 +211,23 @@ class BridgeApp {
 
     _showScreen(screenId) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById(screenId).classList.add('active');
+        const screen = document.getElementById(screenId);
+        if (screen) screen.classList.add('active');
     }
 
     // ==================== GAME FLOW ====================
 
     _startGame() {
         this.isMultiplayer = false;
+        if (this._gameStarting) return;
+        this._gameStarting = true;
         this._saveUserSettings();
         this.gameState = new GameState(this.settings);
         this.ai = new BridgeAI(this.settings);
         this._layoutTable();
         this._showScreen('game-screen');
         if (this.community) this.community.notifyEnterGame();
+        this._gameStarting = false;
         this._startDeal();
     }
 
@@ -252,6 +256,7 @@ class BridgeApp {
         for (const pos of POSITIONS) {
             const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
             const handEl = document.getElementById(`hand-${posName}`);
+            if (!handEl) continue;
             // Remove old seat classes
             handEl.classList.remove('seat-top', 'seat-bottom', 'seat-left', 'seat-right');
             // Add new one
@@ -262,6 +267,7 @@ class BridgeApp {
         for (const pos of POSITIONS) {
             const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
             const trickEl = document.getElementById(`trick-${posName}`);
+            if (!trickEl) continue;
             trickEl.classList.remove('trick-pos-top', 'trick-pos-bottom', 'trick-pos-left', 'trick-pos-right');
             trickEl.classList.add(`trick-pos-${map[pos]}`);
         }
@@ -272,6 +278,7 @@ class BridgeApp {
 
     _updatePositionBadges() {
         const map = this._screenMap;
+        if (!map) return;
         const gs = this.gameState;
         const badgeLetters = { N: 'N', S: 'S', E: 'E', W: 'O' };
 
@@ -282,6 +289,7 @@ class BridgeApp {
 
             const letterEl = badgeEl.querySelector('.badge-letter');
             const nameEl = badgeEl.querySelector('.badge-name');
+            if (!letterEl || !nameEl) continue;
 
             letterEl.textContent = badgeLetters[pos];
             letterEl.classList.remove('human', 'ai');
@@ -374,6 +382,7 @@ class BridgeApp {
         const gs = this.gameState;
         const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
         const containerEl = document.getElementById(`cards-${posName}`);
+        if (!containerEl) return;
         containerEl.innerHTML = '';
 
         const hand = gs.hands[pos];
@@ -451,6 +460,7 @@ class BridgeApp {
         for (const pos of POSITIONS) {
             const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
             const label = document.getElementById(`label-${posName}`);
+            if (!label) continue;
 
             let text = POSITION_FR[pos];
             if (pos === gs.humanPos) {
@@ -487,6 +497,7 @@ class BridgeApp {
                 const badgeEl = document.getElementById(`badge-${screenPos}`);
                 if (badgeEl) {
                     const nameEl = badgeEl.querySelector('.badge-name');
+                    if (!nameEl) continue;
 
                     let badgeText = POSITION_FR[pos];
                     if (pos === gs.humanPos) {
@@ -782,6 +793,7 @@ class BridgeApp {
     _clearTrickDisplay() {
         for (const posName of ['north', 'south', 'east', 'west']) {
             const el = document.getElementById(`trick-${posName}`);
+            if (!el) continue;
             el.innerHTML = '';
             el.classList.add('empty');
             el.classList.remove('red-card');
@@ -791,6 +803,7 @@ class BridgeApp {
     _displayTrickCard(pos, card) {
         const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
         const el = document.getElementById(`trick-${posName}`);
+        if (!el) return;
         el.innerHTML = this._cardHTML(card);
         el.classList.remove('empty');
         el.classList.toggle('red-card', card.isRed);
@@ -1064,7 +1077,7 @@ class BridgeApp {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ won, aiLevel: this.settings.level })
-        }).catch(() => {});
+        }).catch(e => console.warn('Failed to update rating:', e.message));
     }
 
     // ==================== MESSAGES ====================
