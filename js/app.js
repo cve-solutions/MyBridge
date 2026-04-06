@@ -43,6 +43,10 @@ class BridgeApp {
                 el.classList.add('selected');
                 this.settings.level = el.dataset.level;
             });
+            el.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                this._showLevelInfo(el.dataset.level);
+            });
         });
 
         // Convention selection
@@ -60,6 +64,10 @@ class BridgeApp {
                 document.querySelectorAll('[data-scoring]').forEach(e => e.classList.remove('selected'));
                 el.classList.add('selected');
                 this.settings.scoring = el.dataset.scoring;
+            });
+            el.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                this._showScoringInfo(el.dataset.scoring);
             });
         });
 
@@ -1089,6 +1097,9 @@ class BridgeApp {
 
         let html = '';
 
+        // Mode indicator
+        html += `<div class="score-mode-tag">${gs.isRubber ? 'Partie libre (Rubber)' : 'Duplicate (Tournoi)'}</div>`;
+
         // Contract info
         const suitStr = gs.contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[gs.contract.suit];
         html += `<div class="score-line"><span>Contrat</span><span>${gs.contract.level}${suitStr} par ${POSITION_FR[gs.contract.declarer]}</span></div>`;
@@ -1098,23 +1109,56 @@ class BridgeApp {
 
         html += '<div style="height:15px"></div>';
 
-        // Score details
-        for (const detail of score.details) {
-            const cls = detail.value >= 0 ? 'score-positive' : 'score-negative';
-            html += `<div class="score-line"><span>${detail.label}</span><span class="${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></div>`;
+        if (gs.isRubber && gs.rubber) {
+            // ============ RUBBER SCORING ============
+            const rubberResult = gs.getRubberScore();
+
+            for (const detail of rubberResult.details) {
+                const cls = detail.value >= 0 ? 'score-positive' : 'score-negative';
+                const zoneLabel = detail.zone === 'below' ? ' ▼' : detail.zone === 'game' ? ' ★' : ' ▲';
+                html += `<div class="score-line"><span>${detail.label}${zoneLabel}</span><span class="${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></div>`;
+            }
+
+            html += '<div style="height:10px"></div>';
+
+            // Rubber state: below the line
+            html += `<div class="score-line"><span>Sous la ligne NS</span><span>${rubberResult.below.NS}</span></div>`;
+            html += `<div class="score-line"><span>Sous la ligne EO</span><span>${rubberResult.below.EW}</span></div>`;
+
+            // Games
+            html += `<div class="score-line" style="margin-top:8px"><span>Manches NS</span><span style="color:#2ecc71;font-weight:bold">${rubberResult.games.NS}</span></div>`;
+            html += `<div class="score-line"><span>Manches EO</span><span style="color:#2ecc71;font-weight:bold">${rubberResult.games.EW}</span></div>`;
+
+            // Vulnerability
+            const vuln = gs.rubber.getVulnerability();
+            const vulnText = vuln === 'None' ? 'Personne' : vuln === 'Both' ? 'Tous' : vuln === 'NS' ? 'Nord-Sud' : 'Est-Ouest';
+            html += `<div class="score-line"><span>Vulnérable</span><span style="color:#e94560">${vulnText}</span></div>`;
+
+            // Total above + below
+            html += `<div class="score-line total" style="margin-top:10px"><span>Total NS</span><span>${rubberResult.totalNS}</span></div>`;
+            html += `<div class="score-line total"><span>Total EO</span><span>${rubberResult.totalEW}</span></div>`;
+
+            if (rubberResult.isComplete) {
+                const winnerText = rubberResult.winner === 'NS' ? 'Nord-Sud' : 'Est-Ouest';
+                html += `<div class="score-line" style="margin-top:12px;text-align:center"><span style="color:#f1c40f;font-weight:bold;font-size:1.1em">Rubber terminé ! Victoire ${winnerText}</span></div>`;
+            }
+        } else {
+            // ============ DUPLICATE SCORING ============
+            for (const detail of score.details) {
+                const cls = detail.value >= 0 ? 'score-positive' : 'score-negative';
+                html += `<div class="score-line"><span>${detail.label}</span><span class="${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></div>`;
+            }
+
+            const nsScore = score.ns;
+            const cls = nsScore >= 0 ? 'score-positive' : 'score-negative';
+            html += `<div class="score-line total"><span>Score Nord-Sud</span><span class="${cls}">${nsScore > 0 ? '+' : ''}${nsScore}</span></div>`;
+
+            gs.totalScore.NS += score.ns;
+            gs.totalScore.EW += score.ew;
+
+            html += `<div class="score-line" style="margin-top:15px"><span>Total cumulé NS</span><span>${gs.totalScore.NS}</span></div>`;
+            html += `<div class="score-line"><span>Total cumulé EO</span><span>${gs.totalScore.EW}</span></div>`;
         }
-
-        // Total
-        const nsScore = score.ns;
-        const cls = nsScore >= 0 ? 'score-positive' : 'score-negative';
-        html += `<div class="score-line total"><span>Score Nord-Sud</span><span class="${cls}">${nsScore > 0 ? '+' : ''}${nsScore}</span></div>`;
-
-        // Update running total
-        gs.totalScore.NS += score.ns;
-        gs.totalScore.EW += score.ew;
-
-        html += `<div class="score-line" style="margin-top:15px"><span>Total cumulé NS</span><span>${gs.totalScore.NS}</span></div>`;
-        html += `<div class="score-line"><span>Total cumulé EO</span><span>${gs.totalScore.EW}</span></div>`;
 
         detailsEl.innerHTML = html;
 
@@ -1474,6 +1518,145 @@ class BridgeApp {
         callback(detectedText);
     }
 
+    // ==================== LEVEL INFO ====================
+
+    _showLevelInfo(level) {
+        const infos = {
+            beginner: {
+                name: 'Débutant (Elo ~800)',
+                body: `<p>L'IA simule un joueur qui débute le bridge.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : ouvertures basiques seulement. <span style="color:#e74c3c">Oublie les conventions 30% du temps</span> (pas de Stayman, pas de Texas)</li>
+                        <li><strong>Erreurs de comptage</strong> : ±3 HCP de bruit — peut ouvrir avec 9 HCP ou passer avec 14</li>
+                        <li><strong>Jeu de la carte</strong> : quasi-aléatoire, joue souvent la plus petite carte</li>
+                        <li><strong>Pas de plan de jeu</strong>, pas de finesse, pas de signal</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : découvrir le bridge, s'amuser sans pression</p>`
+            },
+            initiate: {
+                name: 'Initié (Elo ~1000)',
+                body: `<p>L'IA connaît les bases mais manque de précision.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : ouvertures et réponses correctes, Stayman et Texas basiques</li>
+                        <li><strong>Erreurs</strong> : ±2 HCP de bruit — quelques enchères approximatives</li>
+                        <li><strong>Jeu de la carte</strong> : fournit correctement, essaie de gagner les plis</li>
+                        <li><strong>Oublie parfois</strong> les conventions (10% du temps)</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs qui connaissent les règles de base</p>`
+            },
+            intermediate: {
+                name: 'Intermédiaire (Elo ~1200)',
+                body: `<p>Un adversaire solide avec une bonne maîtrise des fondamentaux.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : système complet (ouvertures, réponses, rebids, Stayman, Texas, barrages)</li>
+                        <li><strong>Précision</strong> : ±1 HCP de bruit — rarement une enchère aberrante</li>
+                        <li><strong>Jeu de la carte</strong> : entame 4ème meilleure, gagne au moins cher, coupe quand possible</li>
+                        <li><strong>Surcoupe</strong> intelligente, ne coupe pas quand le partenaire gagne</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs réguliers de club</p>`
+            },
+            confirmed: {
+                name: 'Confirmé (Elo ~1500)',
+                body: `<p>Un adversaire expérimenté qui maîtrise les enchères compétitives.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : + contre d'appel, intervention, surenchère, overcall 1SA</li>
+                        <li><strong>Aucun bruit</strong> dans le comptage des points</li>
+                        <li><strong>Jeu de la carte</strong> : 2ème main basse, 3ème main haute, <span style="color:#f1c40f">finesse AQ et RV</span></li>
+                        <li><strong>Entame</strong> : singleton contre un contrat en couleur, séquence de tête</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs de compétition régionale</p>`
+            },
+            expert: {
+                name: 'Expert (Elo ~1800)',
+                body: `<p>Un adversaire de haut niveau avec une stratégie complète.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : + Blackwood 4SA, enchères de chelem, cue-bids</li>
+                        <li><strong>Plan de jeu</strong> : compte les levées sûres, développe les couleurs longues</li>
+                        <li><strong>Jeu de la carte</strong> : tire les atouts tôt en déclarant, préférence de couleur en défausse</li>
+                        <li><strong>Signalisation</strong> : défausse des couleurs faibles pour guider le partenaire</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs de compétition nationale</p>`
+            },
+            master: {
+                name: 'Maître (Elo ~2100)',
+                body: `<p>Le plus haut niveau de l'IA. Joue de manière quasi-optimale.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : toutes les conventions, sacrifices calculés, enchères de chelem précises</li>
+                        <li><strong>Jeu de la carte</strong> : toutes les techniques (finesse, squeeze simple, endplay)</li>
+                        <li><strong>Endplay</strong> : détecte les situations de mise en main en fin de donne</li>
+                        <li><strong>Défense</strong> : signalisation complète, comptage des mains adverses</li>
+                    </ul>
+                    <p style="color:#e94560;margin-top:8px">Attention : adversaire redoutable, même pour les meilleurs joueurs !</p>`
+            }
+        };
+        const info = infos[level] || { name: level, body: '<p>Information non disponible.</p>' };
+        document.getElementById('convention-modal-title').textContent = info.name;
+        document.getElementById('convention-modal-body').innerHTML = info.body;
+        this._openModal('convention-modal');
+    }
+
+    // ==================== SCORING INFO ====================
+
+    _showScoringInfo(scoring) {
+        const infos = {
+            duplicate: {
+                name: 'Duplicate (Tournoi)',
+                body: `<p>Le mode <strong>Duplicate</strong> est utilisé en compétition et en club. Chaque donne est indépendante.</p>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Calcul des points</h4>
+                    <table style="width:100%;font-size:0.9em;border-collapse:collapse;color:#ccc">
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.1)"><th style="text-align:left;padding:4px">Contrat réussi</th><th style="text-align:right;padding:4px">Points</th></tr>
+                        <tr><td style="padding:3px">Levées en mineure (♣♦)</td><td style="text-align:right">20 / levée</td></tr>
+                        <tr><td style="padding:3px">Levées en majeure (♥♠)</td><td style="text-align:right">30 / levée</td></tr>
+                        <tr><td style="padding:3px">Levées en SA</td><td style="text-align:right">40 + 30 / levée suiv.</td></tr>
+                        <tr style="border-top:1px solid rgba(255,255,255,0.1)"><td style="padding:3px"><strong>Prime de manche</strong> (100+ pts de contrat)</td><td style="text-align:right">300 NV / 500 V</td></tr>
+                        <tr><td style="padding:3px">Prime partielle (&lt;100 pts)</td><td style="text-align:right">50</td></tr>
+                        <tr><td style="padding:3px">Petit chelem (niveau 6)</td><td style="text-align:right">500 NV / 750 V</td></tr>
+                        <tr><td style="padding:3px">Grand chelem (niveau 7)</td><td style="text-align:right">1000 NV / 1500 V</td></tr>
+                    </table>
+                    <table style="width:100%;font-size:0.9em;border-collapse:collapse;color:#ccc;margin-top:10px">
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.1)"><th style="text-align:left;padding:4px">Chute</th><th style="text-align:right;padding:4px">Pénalité</th></tr>
+                        <tr><td style="padding:3px">Non vulnérable</td><td style="text-align:right">50 / levée de chute</td></tr>
+                        <tr><td style="padding:3px">Vulnérable</td><td style="text-align:right">100 / levée de chute</td></tr>
+                        <tr><td style="padding:3px">Contré NV</td><td style="text-align:right">100, 300, 500, +300</td></tr>
+                        <tr><td style="padding:3px">Contré V</td><td style="text-align:right">200, +300 par levée</td></tr>
+                    </table>
+                    <p style="color:#888;margin-top:10px"><strong>NV</strong> = Non Vulnérable, <strong>V</strong> = Vulnérable. La vulnérabilité suit un cycle fixe de 16 donnes.</p>`
+            },
+            rubber: {
+                name: 'Rubber (Partie libre)',
+                body: `<p>Le mode <strong>Rubber</strong> est le bridge de salon. Les donnes sont liées : il faut gagner <strong>2 manches</strong> pour remporter le rubber.</p>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Sous la ligne (vers la manche)</h4>
+                    <p>Seuls les points de <strong>levées du contrat</strong> comptent vers la manche :</p>
+                    <ul>
+                        <li>♣♦ : 20 pts/levée — ♥♠ : 30 pts/levée — SA : 40 + 30/levée</li>
+                        <li><strong>100 points</strong> sous la ligne = <strong>1 manche gagnée</strong></li>
+                        <li>Les deux côtés sont remis à zéro après chaque manche</li>
+                        <li>Exemples : 3SA (100) = manche ! 4♥ (120) = manche ! 2♠ (60) = partielle</li>
+                    </ul>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Au-dessus de la ligne (bonus)</h4>
+                    <ul>
+                        <li>Surlevées, primes de chelem, pénalités de chute</li>
+                        <li>Ces points ne comptent pas vers la manche</li>
+                    </ul>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Vulnérabilité</h4>
+                    <ul>
+                        <li>Gagner <strong>1 manche</strong> rend votre camp <strong>vulnérable</strong></li>
+                        <li>Vulnérable = pénalités de chute doublées, mais primes de manche plus élevées</li>
+                    </ul>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Fin du Rubber</h4>
+                    <ul>
+                        <li><strong>2 manches gagnées</strong> = rubber terminé</li>
+                        <li>Bonus : <strong>+700</strong> si victoire 2-0, <strong>+500</strong> si victoire 2-1</li>
+                        <li>Le score final = total au-dessus + au-dessous de la ligne</li>
+                    </ul>`
+            }
+        };
+        const info = infos[scoring] || { name: scoring, body: '<p>Information non disponible.</p>' };
+        document.getElementById('convention-modal-title').textContent = info.name;
+        document.getElementById('convention-modal-body').innerHTML = info.body;
+        this._openModal('convention-modal');
+    }
+
     // ==================== CONVENTION CARD ====================
 
     _showConventionInfo(convention) {
@@ -1585,12 +1768,7 @@ class BridgeApp {
         // 2. Bidding sequence
         if (gs.bidding && gs.bidding.bids.length > 0) {
             html += '<div class="analysis-section"><h4>Séquence d\'enchères jouée</h4>';
-            html += '<div class="analysis-bid-sequence">';
-            for (const bid of gs.bidding.bids) {
-                const label = POSITION_FR[bid.player];
-                html += `<span class="analysis-bid"><strong>${label}:</strong> ${bid.toString()}</span>`;
-            }
-            html += '</div>';
+            html += this._biddingToTable(gs.bidding.bids, gs.dealer);
 
             if (gs.contract) {
                 const c = gs.contract;
@@ -1675,12 +1853,45 @@ class BridgeApp {
         this._openModal('analysis-modal');
     }
 
-    // Simulate expert-level bidding for all 4 hands
+    // Format bidding sequence as a W/N/E/S table (one row per round)
+    _biddingToTable(bids, dealer) {
+        const displayOrder = ['W', 'N', 'E', 'S'];
+        const dealerCol = displayOrder.indexOf(dealer);
+        let html = '<table class="analysis-bid-table">';
+        html += '<tr><th>O</th><th>N</th><th>E</th><th>S</th></tr>';
+
+        let col = 0;
+        let rowHtml = '';
+        // Empty cells before dealer
+        for (let i = 0; i < dealerCol; i++) {
+            rowHtml += '<td></td>';
+            col++;
+        }
+
+        for (const bid of bids) {
+            rowHtml += `<td>${bid.toDisplayHTML()}</td>`;
+            col++;
+            if (col % 4 === 0) {
+                html += `<tr>${rowHtml}</tr>`;
+                rowHtml = '';
+            }
+        }
+        // Fill remaining cells
+        if (rowHtml) {
+            while (col % 4 !== 0) { rowHtml += '<td></td>'; col++; }
+            html += `<tr>${rowHtml}</tr>`;
+        }
+        html += '</table>';
+        return html;
+    }
+
+    // Simulate master-level bidding for all 4 hands with explanations
     _generateExpertBiddingAnalysis(gs) {
         if (!gs.originalHands || !gs.dealer) return '';
 
-        const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+        const masterAI = new BridgeAI({ level: 'master', convention: this.settings.convention });
         const simBidding = new BiddingManager(gs.dealer);
+        const bidReasons = [];
 
         let safety = 0;
         while (!simBidding.isComplete && safety < 40) {
@@ -1688,60 +1899,134 @@ class BridgeApp {
             const hand = gs.originalHands[pos];
             if (!hand) break;
 
-            // Build a minimal gameState-like object for the AI
-            const fakeGS = {
-                hands: gs.originalHands,
-                bidding: simBidding,
-                humanPos: '__none__'
-            };
-            const bid = expertAI.makeBid(fakeGS, pos);
+            const eval_ = evaluateHand(hand);
+            const fakeGS = { hands: gs.originalHands, bidding: simBidding, humanPos: '__none__' };
+            const bid = masterAI.makeBid(fakeGS, pos);
+            bidReasons.push(this._explainBid(bid, eval_, simBidding, pos));
             simBidding.placeBid(bid);
             safety++;
         }
 
-        let html = '<div class="analysis-section"><h4>Séquence d\'enchères expert (' + this._conventionLabel() + ')</h4>';
-        html += '<div class="analysis-bid-sequence">';
-        for (const bid of simBidding.bids) {
-            const label = POSITION_FR[bid.player];
-            html += `<span class="analysis-bid"><strong>${label}:</strong> ${bid.toString()}</span>`;
+        let html = '<div class="analysis-section"><h4>Ench\u00e8res du Ma\u00eetre (' + this._conventionLabel() + ')</h4>';
+        html += this._biddingToTable(simBidding.bids, gs.dealer);
+
+        // Show bid explanations
+        if (bidReasons.some(r => r)) {
+            html += '<div class="master-explanations">';
+            html += '<p style="color:#e8a020;font-weight:600;margin:10px 0 6px">Raisonnement du Ma\u00eetre :</p>';
+            for (let i = 0; i < simBidding.bids.length; i++) {
+                const bid = simBidding.bids[i];
+                const reason = bidReasons[i];
+                if (!reason) continue;
+                html += '<p class="analysis-comment"><strong>' + POSITION_FR[bid.player] + '</strong> ' + bid.toString() + ' \u2014 <span style="color:#aaa">' + reason + '</span></p>';
+            }
+            html += '</div>';
         }
-        html += '</div>';
 
         if (simBidding.contract) {
             const c = simBidding.contract;
             const suitStr = c.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[c.suit];
-            html += `<p class="analysis-comment">Contrat expert: <strong>${c.level}${suitStr}</strong> par <strong>${POSITION_FR[c.declarer]}</strong>`;
-            if (c.doubled) html += ' contré';
-            if (c.redoubled) html += ' surcontré';
-            html += `<br>Mort: <strong>${POSITION_FR[c.dummy]}</strong></p>`;
+            html += '<p class="analysis-comment">Contrat du Ma\u00eetre: <strong>' + c.level + suitStr + '</strong> par <strong>' + POSITION_FR[c.declarer] + '</strong>';
+            if (c.doubled) html += ' contr\u00e9';
+            if (c.redoubled) html += ' surcontr\u00e9';
+            html += '<br>Mort: <strong>' + POSITION_FR[c.dummy] + '</strong></p>';
 
-            // Compare with actual contract
             if (gs.contract) {
                 const actualIdx = (gs.contract.level - 1) * 5 + SUIT_ORDER[gs.contract.suit];
-                const expertIdx = (c.level - 1) * 5 + SUIT_ORDER[c.suit];
-                if (expertIdx > actualIdx) {
-                    html += `<p class="analysis-comment" style="color:#f1c40f">L'expert aurait enchéri plus haut.</p>`;
-                } else if (expertIdx < actualIdx) {
-                    html += `<p class="analysis-comment" style="color:#f1c40f">L'expert aurait enchéri plus prudemment.</p>`;
+                const masterIdx = (c.level - 1) * 5 + SUIT_ORDER[c.suit];
+                if (masterIdx > actualIdx) {
+                    html += '<p class="analysis-comment" style="color:#f1c40f">Le Ma\u00eetre ench\u00e9rit plus haut \u2014 il exploite mieux le potentiel combin\u00e9 des deux mains.</p>';
+                } else if (masterIdx < actualIdx) {
+                    html += '<p class="analysis-comment" style="color:#f1c40f">Le Ma\u00eetre est plus prudent \u2014 il estime que la main ne justifie pas ce contrat.</p>';
                 } else if (c.declarer !== gs.contract.declarer) {
-                    html += `<p class="analysis-comment" style="color:#f1c40f">Même contrat, mais joué par un déclarant différent.</p>`;
+                    html += '<p class="analysis-comment" style="color:#f1c40f">M\u00eame contrat, mais le Ma\u00eetre pr\u00e9f\u00e8re un d\u00e9clarant diff\u00e9rent (meilleure position des honneurs).</p>';
                 } else {
-                    html += `<p class="analysis-comment" style="color:#2ecc71">Même contrat que l'expert !</p>`;
+                    html += '<p class="analysis-comment" style="color:#2ecc71">M\u00eame contrat que le Ma\u00eetre ! Vos ench\u00e8res \u00e9taient optimales.</p>';
                 }
             }
         } else {
-            html += `<p class="analysis-comment">L'expert aurait passé cette donne.</p>`;
+            html += '<p class="analysis-comment">Le Ma\u00eetre passe cette donne \u2014 les mains combin\u00e9es ne justifient aucun contrat.</p>';
         }
 
         html += '</div>';
         return html;
     }
 
-    // Simulate ideal play using expert AI for all 4 positions
+    // Explain why the master chose this bid
+    _explainBid(bid, eval_, bidding, pos) {
+        const hcp = eval_.hcp;
+        const tp = eval_.totalPoints;
+        const partner = partnerOf(pos);
+        const partnerBids = bidding.bids.filter(b => b.player === partner && b.type === 'bid');
+        const myBids = bidding.bids.filter(b => b.player === pos && b.type === 'bid');
+
+        if (bid.type === 'pass') {
+            if (myBids.length === 0 && partnerBids.length === 0 && hcp < 12)
+                return hcp + ' HCP \u2014 insuffisant pour ouvrir (12 minimum)';
+            if (partnerBids.length > 0)
+                return 'Rien \u00e0 ajouter, le partenaire conna\u00eet la force';
+            return null;
+        }
+        if (bid.type === 'double') return hcp + ' HCP, courte dans la couleur adverse \u2014 contre d\'appel';
+        if (bid.type === 'redouble') return 'Main forte, surcontre pour montrer la force';
+
+        // Opening bids
+        if (myBids.length === 0 && partnerBids.length === 0) {
+            if (bid.level === 1 && bid.suit === 'NT') return hcp + ' HCP, main \u00e9quilibr\u00e9e \u2014 ouverture 1SA';
+            if (bid.level === 2 && bid.suit === 'C') return hcp + ' HCP \u2014 ouverture forte artificielle 2\u2663';
+            if (bid.level === 2 && bid.suit === 'NT') return hcp + ' HCP, \u00e9quilibr\u00e9e \u2014 ouverture forte 2SA';
+            if (bid.level === 1 && (bid.suit === 'H' || bid.suit === 'S'))
+                return hcp + ' HCP, ' + eval_.suitCounts[bid.suit] + ' cartes \u00e0 ' + SUIT_SYMBOLS[bid.suit] + ' \u2014 ouverture en majeure';
+            if (bid.level === 1)
+                return hcp + ' HCP, ' + eval_.suitCounts[bid.suit] + ' cartes \u00e0 ' + SUIT_SYMBOLS[bid.suit] + ' \u2014 ouverture en mineure';
+            if (bid.level === 2)
+                return hcp + ' HCP, ' + eval_.suitCounts[bid.suit] + ' cartes \u2014 barrage faible';
+        }
+
+        // Responses
+        if (myBids.length === 0 && partnerBids.length > 0) {
+            const pBid = partnerBids[0];
+            if (bid.level === 2 && bid.suit === 'C' && pBid.suit === 'NT') return 'Stayman \u2014 cherche un fit majeur 4-4';
+            if (bid.level === 2 && bid.suit === 'D' && pBid.suit === 'NT') return 'Texas \u2665 \u2014 montre 5+ c\u0153urs';
+            if (bid.level === 2 && bid.suit === 'H' && pBid.suit === 'NT') return 'Texas \u2660 \u2014 montre 5+ piques';
+            if (bid.suit === pBid.suit)
+                return eval_.suitCounts[bid.suit] + ' cartes de soutien, ' + tp + ' pts \u2014 fit trouv\u00e9 !';
+            if (bid.level === 4 && bid.suit === 'NT') return 'Blackwood \u2014 demande les as pour le chelem';
+            if (bid.suit === 'NT') return hcp + ' HCP, \u00e9quilibr\u00e9e \u2014 proposition SA';
+            return hcp + ' HCP, ' + (eval_.suitCounts[bid.suit] || '?') + ' cartes \u00e0 ' + (SUIT_SYMBOLS[bid.suit] || bid.suit) + ' \u2014 nouvelle couleur';
+        }
+
+        // Rebids
+        if (bid.level === 4 && bid.suit === 'NT') return 'Blackwood \u2014 exploration de chelem';
+        if (myBids.length > 0 && bid.suit === myBids[myBids.length - 1].suit)
+            return 'Redemande sa couleur (' + eval_.suitCounts[bid.suit] + ' cartes) \u2014 couleur solide';
+        if (bid.suit === 'NT') return 'Main \u00e9quilibr\u00e9e, ' + hcp + ' HCP \u2014 pr\u00e9cise la force';
+        return hcp + ' HCP, ' + (eval_.suitCounts[bid.suit] || '?') + ' cartes \u00e0 ' + (SUIT_SYMBOLS[bid.suit] || bid.suit);
+    }
+
+    // Simulate ideal play using master-level AI for all 4 positions
+    // Uses the EXPERT contract (from _generateExpertBiddingAnalysis) if available
     _generateIdealPlayAnalysis(gs) {
         if (!gs.contract || !gs.originalHands) return '';
 
-        const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+        const masterAI = new BridgeAI({ level: 'master', convention: this.settings.convention });
+
+        // Re-run expert bidding to get the expert contract
+        let expertContract = gs.contract; // fallback to actual contract
+        try {
+            const expertAI = new BridgeAI({ level: 'master', convention: this.settings.convention });
+            const simBidding = new BiddingManager(gs.dealer);
+            let safety = 0;
+            while (!simBidding.isComplete && safety < 40) {
+                const pos = simBidding.currentBidder;
+                const hand = gs.originalHands[pos];
+                if (!hand) break;
+                const bid = expertAI.makeBid({ hands: gs.originalHands, bidding: simBidding, humanPos: '__none__' }, pos);
+                simBidding.placeBid(bid);
+                safety++;
+            }
+            if (simBidding.contract) expertContract = simBidding.contract;
+        } catch (e) { /* use actual contract */ }
 
         // Clone hands for simulation
         const simHands = {};
@@ -1749,7 +2034,7 @@ class BridgeApp {
             simHands[pos] = gs.originalHands[pos] ? [...gs.originalHands[pos]] : [];
         }
 
-        const contract = gs.contract;
+        const contract = expertContract;
         const trump = contract.suit;
         const leader = nextPos(contract.declarer);
         const simTricks = [];
@@ -1793,7 +2078,7 @@ class BridgeApp {
                     }
                 };
 
-                const card = expertAI.playCard(fakeGS, currentPlayer);
+                const card = masterAI.playCard(fakeGS, currentPlayer);
 
                 // Remove card from hand
                 const idx = simHands[currentPlayer].findIndex(cd => cd.equals(card));
@@ -1817,9 +2102,16 @@ class BridgeApp {
         const expertDiff = expertMade - required;
         const actualMade = gs.tricksWon[declarerTeam];
 
-        let html = '<div class="analysis-section"><h4>Jeu de la carte idéal (simulation expert)</h4>';
+        // Show which contract is being simulated
+        const cSuit = contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[contract.suit];
+        const isExpertContract = contract !== gs.contract;
 
-        html += `<p class="analysis-comment">Levées réalisées par l'expert: <strong>${expertMade}</strong> / ${required} requises — `;
+        let html = '<div class="analysis-section"><h4>Jeu de la carte entre Ma\u00eetres</h4>';
+        html += `<p class="analysis-comment">Contrat simulé: <strong>${contract.level}${cSuit}</strong> par <strong>${POSITION_FR[contract.declarer]}</strong>`;
+        if (isExpertContract) html += ' <span style="color:#f1c40f">(contrat du Ma\u00eetre)</span>';
+        html += '</p>';
+
+        html += `<p class="analysis-comment">Levées réalisées: <strong>${expertMade}</strong> / ${required} requises — `;
         if (expertDiff >= 0) {
             html += `<span style="color:#2ecc71">Contrat réussi${expertDiff > 0 ? ` (+${expertDiff})` : ''}</span>`;
         } else {
@@ -1864,6 +2156,75 @@ class BridgeApp {
         }
         html += '</table></div>';
 
+        // Add master play explanations
+        html += this._explainMasterPlays(simTricks, contract, gs);
+
+        return html;
+    }
+
+    // Generate explanations for notable plays in the master simulation
+    _explainMasterPlays(simTricks, contract, gs) {
+        const tips = [];
+        const trump = contract.suit;
+        const declarerTeam = teamOf(contract.declarer);
+
+        for (let i = 0; i < simTricks.length; i++) {
+            const trick = simTricks[i];
+            const winner = trick.getWinner();
+            if (!winner) continue;
+
+            // Opening lead explanation
+            if (i === 0) {
+                const leaderCard = trick.cards[trick.leader];
+                const leaderHand = gs.originalHands[trick.leader];
+                if (leaderCard && leaderHand) {
+                    const suitLen = leaderHand.filter(c => c.suit === leaderCard.suit).length;
+                    if (trump === 'NT') {
+                        tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame ' + leaderCard.toString() + ' : ' +
+                            (suitLen >= 4 ? '4\u00e8me meilleure de sa plus longue couleur (' + suitLen + ' cartes) pour \u00e9tablir des lev\u00e9es de longueur.' :
+                             suitLen === 1 ? 'singleton ! Esp\u00e8re couper au retour.' :
+                             'entame courte, cherche le point d\'entr\u00e9e du partenaire.'));
+                    } else {
+                        if (suitLen === 1) {
+                            tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame son singleton ' + leaderCard.toString() + ' : esp\u00e8re couper au retour !');
+                        } else if (leaderCard.rank === 'A' || leaderCard.rank === 'K') {
+                            tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame ' + leaderCard.toString() + ' : t\u00eate de s\u00e9quence pour prendre le contr\u00f4le.');
+                        } else {
+                            tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame ' + leaderCard.toString() + ' (' + suitLen + ' cartes dans la couleur).');
+                        }
+                    }
+                }
+            }
+
+            // Trump drawn early by declarer
+            if (i <= 2 && trump !== 'NT' && trick.leader === contract.declarer) {
+                const leaderCard = trick.cards[trick.leader];
+                if (leaderCard && leaderCard.suit === trump) {
+                    tips.push('Lev\u00e9e ' + (i+1) + ' \u2014 Le d\u00e9clarant tire les atouts t\u00f4t pour emp\u00eacher les coupes adverses.');
+                }
+            }
+
+            // Finesse detected
+            for (const p of ['N','E','S','W']) {
+                const card = trick.cards[p];
+                if (!card) continue;
+                if ((card.rank === 'Q' || card.rank === 'J') && p !== trick.leader && winner === p) {
+                    const winCard = trick.cards[winner];
+                    if (winCard === card) {
+                        tips.push('Lev\u00e9e ' + (i+1) + ' \u2014 ' + POSITION_FR[p] + ' r\u00e9ussit une impasse avec ' + card.toString() + ' !');
+                    }
+                }
+            }
+        }
+
+        if (tips.length === 0) return '';
+
+        let html = '<div style="margin-top:10px">';
+        html += '<p style="color:#e8a020;font-weight:600;margin-bottom:6px">Explications du Ma\u00eetre :</p>';
+        for (const tip of tips) {
+            html += '<p class="analysis-comment">\ud83d\udca1 ' + tip + '</p>';
+        }
+        html += '</div>';
         return html;
     }
 

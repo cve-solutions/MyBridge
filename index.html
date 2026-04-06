@@ -57,6 +57,7 @@
             <!-- Difficulty -->
             <div class="settings-section">
                 <h2>Niveau de difficulté</h2>
+                <p class="hint-text">Double-cliquez sur un niveau pour voir le comportement de l'IA</p>
                 <div class="option-group">
                     <button class="option-btn" data-level="beginner">Débutant</button>
                     <button class="option-btn" data-level="initiate">Initié</button>
@@ -83,9 +84,10 @@
             <!-- Scoring -->
             <div class="settings-section">
                 <h2>Mode de score</h2>
+                <p class="hint-text">Double-cliquez sur un mode pour voir les règles de calcul</p>
                 <div class="option-group">
-                    <button class="option-btn scoring-btn selected" data-scoring="duplicate">Duplicate</button>
-                    <button class="option-btn scoring-btn" data-scoring="rubber">Rubber</button>
+                    <button class="option-btn scoring-btn selected" data-scoring="duplicate">Duplicate (Tournoi)</button>
+                    <button class="option-btn scoring-btn" data-scoring="rubber">Rubber (Partie libre)</button>
                 </div>
             </div>
 
@@ -180,8 +182,8 @@
                             <option value="standard">Standard American</option>
                         </select>
                         <select id="mp-scoring" class="mp-select">
-                            <option value="duplicate">Duplicate</option>
-                            <option value="rubber">Rubber</option>
+                            <option value="duplicate">Duplicate (Tournoi)</option>
+                            <option value="rubber">Rubber (Partie libre)</option>
                         </select>
                     </div>
                     <button id="mp-create-btn" class="primary-btn" style="margin-top:10px;">Créer une table</button>
