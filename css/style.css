@@ -1703,16 +1703,28 @@ body {
     flex: 1;
     min-width: 120px;
     padding: 8px 10px;
-    background: rgba(255,255,255,0.05);
+    background: #1e1e3a;
     border: 1px solid rgba(255,255,255,0.15);
     color: #eee;
     border-radius: 8px;
     font-size: 0.9em;
     outline: none;
     cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
 }
 
 .mp-select:focus { border-color: #e94560; }
+
+.mp-select option {
+    background: #1e1e3a;
+    color: #eee;
+}
 
 .mp-join-row {
     display: flex;
@@ -1723,7 +1735,7 @@ body {
 .mp-code-input {
     width: 80px;
     padding: 8px 10px;
-    background: rgba(255,255,255,0.05);
+    background: #1e1e3a;
     border: 1px solid rgba(255,255,255,0.15);
     color: #fff;
     border-radius: 8px;
