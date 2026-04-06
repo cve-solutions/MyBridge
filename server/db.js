@@ -178,9 +178,17 @@ function init() {
     // Create default admin account if no admin exists
     const adminExists = db.prepare("SELECT id FROM users WHERE role = 'admin'").get();
     if (!adminExists) {
-        const adminHash = bcrypt.hashSync('admin', SALT_ROUNDS);
-        const res = db.prepare("INSERT OR IGNORE INTO users (username, password_hash, display_name, role) VALUES ('admin', ?, 'Administrateur', 'admin')").run(adminHash);
-        if (res.changes > 0) {
+        // Check if 'admin' user already exists (from before role system)
+        const existingAdmin = db.prepare("SELECT id FROM users WHERE username = 'admin'").get();
+        if (existingAdmin) {
+            // Promote existing 'admin' user and reset password
+            const adminHash = bcrypt.hashSync('admin', SALT_ROUNDS);
+            db.prepare("UPDATE users SET role = 'admin', password_hash = ? WHERE id = ?").run(adminHash, existingAdmin.id);
+            console.log('[DB] Existing "admin" user promoted to admin role (password reset to: admin)');
+        } else {
+            // Create new admin account
+            const adminHash = bcrypt.hashSync('admin', SALT_ROUNDS);
+            const res = db.prepare("INSERT INTO users (username, password_hash, display_name, role) VALUES ('admin', ?, 'Administrateur', 'admin')").run(adminHash);
             db.prepare('INSERT OR IGNORE INTO user_settings (user_id) VALUES (?)').run(res.lastInsertRowid);
             db.prepare('INSERT OR IGNORE INTO player_ratings (user_id) VALUES (?)').run(res.lastInsertRowid);
             console.log('[DB] Default admin account created (username: admin, password: admin)');
