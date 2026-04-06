@@ -71,6 +71,7 @@ class BridgeAI {
                     twoNTRange: [20, 22],
                     name: 'acol'
                 };
+            case '2over1':
             case 'two_over_one':
                 return {
                     ntRange: [15, 17],

@@ -160,13 +160,20 @@ function init(db, wsClients) {
 }
 
 function _loadTablesFromDB() {
-    const rows = _db.prepare(`
-        SELECT id, code, status, created_by, settings_json
-        FROM multiplayer_tables WHERE status IN ('waiting', 'playing')
-    `).all();
+    let rows;
+    try {
+        rows = _db.prepare(`
+            SELECT id, code, status, created_by, settings_json
+            FROM multiplayer_tables WHERE status IN ('waiting', 'playing')
+        `).all();
+    } catch (e) {
+        console.warn('Could not load tables from DB (table may not exist yet):', e.message);
+        return;
+    }
 
     for (const row of rows) {
-        const settings = JSON.parse(row.settings_json || '{}');
+        let settings = {};
+        try { settings = JSON.parse(row.settings_json || '{}'); } catch (e) { /* corrupted */ }
         const table = new TableState(row.id, row.code, row.created_by, settings);
         table.status = row.status;
 
