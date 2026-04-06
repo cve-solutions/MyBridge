@@ -120,7 +120,7 @@ class Bid {
     }
 
     toDisplayHTML() {
-        const alertBadge = this.alertText ? '<span class="bid-alert-badge" title="' + this.alertText.replace(/"/g, '\'') + '">!</span>' : '';
+        const alertBadge = this.alertText ? '<span class="bid-alert-badge" title="' + this.alertText.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '">!</span>' : '';
         if (this.type === 'pass') return '<span class="pass">Passe</span>' + alertBadge;
         if (this.type === 'double') return '<span class="double">X</span>' + alertBadge;
         if (this.type === 'redouble') return '<span class="redouble">XX</span>' + alertBadge;

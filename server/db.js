@@ -192,7 +192,7 @@ function getUserSettings(userId) {
 function saveUserSettings(userId, settings) {
     const allowed = ['seat', 'level', 'convention', 'scoring'];
     const validSeats = ['N', 'E', 'S', 'W'];
-    const validLevels = ['beginner', 'intermediate', 'advanced', 'expert'];
+    const validLevels = ['beginner', 'initiate', 'intermediate', 'confirmed', 'advanced', 'expert', 'master'];
     const validConventions = ['sef', 'sayc', '2over1', 'acol', 'standard'];
     const validScoring = ['duplicate', 'rubber'];
 
@@ -304,20 +304,25 @@ function getKFactor(rating, gamesPlayed) {
 }
 
 function getRankTitle(rating) {
-    if (rating >= 2200) return '4ème série - Expert';
-    if (rating >= 1900) return '3ème série - Confirmé';
-    if (rating >= 1600) return '2ème série - Intermédiaire';
-    if (rating >= 1300) return '1ère série - Avancé';
-    return 'Promotion - Débutant';
+    if (rating >= 2400) return 'Grand Maître';
+    if (rating >= 2100) return 'Maître';
+    if (rating >= 1800) return 'Expert';
+    if (rating >= 1500) return 'Confirmé';
+    if (rating >= 1200) return 'Intermédiaire';
+    if (rating >= 1000) return 'Initié';
+    return 'Débutant';
 }
 
 function updateRating(userId, won, aiLevel) {
     // AI opponent rating based on level
     const aiRatings = {
         beginner: 800,
+        initiate: 1000,
         intermediate: 1200,
+        confirmed: 1500,
         advanced: 1600,
-        expert: 2000
+        expert: 1800,
+        master: 2100
     };
     const opponentRating = aiRatings[aiLevel] || 1200;
 
