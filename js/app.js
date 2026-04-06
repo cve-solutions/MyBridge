@@ -1885,12 +1885,13 @@ class BridgeApp {
         return html;
     }
 
-    // Simulate expert-level bidding for all 4 hands
+    // Simulate master-level bidding for all 4 hands with explanations
     _generateExpertBiddingAnalysis(gs) {
         if (!gs.originalHands || !gs.dealer) return '';
 
-        const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+        const masterAI = new BridgeAI({ level: 'master', convention: this.settings.convention });
         const simBidding = new BiddingManager(gs.dealer);
+        const bidReasons = [];
 
         let safety = 0;
         while (!simBidding.isComplete && safety < 40) {
@@ -1898,48 +1899,109 @@ class BridgeApp {
             const hand = gs.originalHands[pos];
             if (!hand) break;
 
-            // Build a minimal gameState-like object for the AI
-            const fakeGS = {
-                hands: gs.originalHands,
-                bidding: simBidding,
-                humanPos: '__none__'
-            };
-            const bid = expertAI.makeBid(fakeGS, pos);
+            const eval_ = evaluateHand(hand);
+            const fakeGS = { hands: gs.originalHands, bidding: simBidding, humanPos: '__none__' };
+            const bid = masterAI.makeBid(fakeGS, pos);
+            bidReasons.push(this._explainBid(bid, eval_, simBidding, pos));
             simBidding.placeBid(bid);
             safety++;
         }
 
-        let html = '<div class="analysis-section"><h4>Séquence d\'enchères expert (' + this._conventionLabel() + ')</h4>';
+        let html = '<div class="analysis-section"><h4>Ench\u00e8res du Ma\u00eetre (' + this._conventionLabel() + ')</h4>';
         html += this._biddingToTable(simBidding.bids, gs.dealer);
+
+        // Show bid explanations
+        if (bidReasons.some(r => r)) {
+            html += '<div class="master-explanations">';
+            html += '<p style="color:#e8a020;font-weight:600;margin:10px 0 6px">Raisonnement du Ma\u00eetre :</p>';
+            for (let i = 0; i < simBidding.bids.length; i++) {
+                const bid = simBidding.bids[i];
+                const reason = bidReasons[i];
+                if (!reason) continue;
+                html += '<p class="analysis-comment"><strong>' + POSITION_FR[bid.player] + '</strong> ' + bid.toString() + ' \u2014 <span style="color:#aaa">' + reason + '</span></p>';
+            }
+            html += '</div>';
+        }
 
         if (simBidding.contract) {
             const c = simBidding.contract;
             const suitStr = c.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[c.suit];
-            html += `<p class="analysis-comment">Contrat expert: <strong>${c.level}${suitStr}</strong> par <strong>${POSITION_FR[c.declarer]}</strong>`;
-            if (c.doubled) html += ' contré';
-            if (c.redoubled) html += ' surcontré';
-            html += `<br>Mort: <strong>${POSITION_FR[c.dummy]}</strong></p>`;
+            html += '<p class="analysis-comment">Contrat du Ma\u00eetre: <strong>' + c.level + suitStr + '</strong> par <strong>' + POSITION_FR[c.declarer] + '</strong>';
+            if (c.doubled) html += ' contr\u00e9';
+            if (c.redoubled) html += ' surcontr\u00e9';
+            html += '<br>Mort: <strong>' + POSITION_FR[c.dummy] + '</strong></p>';
 
-            // Compare with actual contract
             if (gs.contract) {
                 const actualIdx = (gs.contract.level - 1) * 5 + SUIT_ORDER[gs.contract.suit];
-                const expertIdx = (c.level - 1) * 5 + SUIT_ORDER[c.suit];
-                if (expertIdx > actualIdx) {
-                    html += `<p class="analysis-comment" style="color:#f1c40f">L'expert aurait enchéri plus haut.</p>`;
-                } else if (expertIdx < actualIdx) {
-                    html += `<p class="analysis-comment" style="color:#f1c40f">L'expert aurait enchéri plus prudemment.</p>`;
+                const masterIdx = (c.level - 1) * 5 + SUIT_ORDER[c.suit];
+                if (masterIdx > actualIdx) {
+                    html += '<p class="analysis-comment" style="color:#f1c40f">Le Ma\u00eetre ench\u00e9rit plus haut \u2014 il exploite mieux le potentiel combin\u00e9 des deux mains.</p>';
+                } else if (masterIdx < actualIdx) {
+                    html += '<p class="analysis-comment" style="color:#f1c40f">Le Ma\u00eetre est plus prudent \u2014 il estime que la main ne justifie pas ce contrat.</p>';
                 } else if (c.declarer !== gs.contract.declarer) {
-                    html += `<p class="analysis-comment" style="color:#f1c40f">Même contrat, mais joué par un déclarant différent.</p>`;
+                    html += '<p class="analysis-comment" style="color:#f1c40f">M\u00eame contrat, mais le Ma\u00eetre pr\u00e9f\u00e8re un d\u00e9clarant diff\u00e9rent (meilleure position des honneurs).</p>';
                 } else {
-                    html += `<p class="analysis-comment" style="color:#2ecc71">Même contrat que l'expert !</p>`;
+                    html += '<p class="analysis-comment" style="color:#2ecc71">M\u00eame contrat que le Ma\u00eetre ! Vos ench\u00e8res \u00e9taient optimales.</p>';
                 }
             }
         } else {
-            html += `<p class="analysis-comment">L'expert aurait passé cette donne.</p>`;
+            html += '<p class="analysis-comment">Le Ma\u00eetre passe cette donne \u2014 les mains combin\u00e9es ne justifient aucun contrat.</p>';
         }
 
         html += '</div>';
         return html;
+    }
+
+    // Explain why the master chose this bid
+    _explainBid(bid, eval_, bidding, pos) {
+        const hcp = eval_.hcp;
+        const tp = eval_.totalPoints;
+        const partner = partnerOf(pos);
+        const partnerBids = bidding.bids.filter(b => b.player === partner && b.type === 'bid');
+        const myBids = bidding.bids.filter(b => b.player === pos && b.type === 'bid');
+
+        if (bid.type === 'pass') {
+            if (myBids.length === 0 && partnerBids.length === 0 && hcp < 12)
+                return hcp + ' HCP \u2014 insuffisant pour ouvrir (12 minimum)';
+            if (partnerBids.length > 0)
+                return 'Rien \u00e0 ajouter, le partenaire conna\u00eet la force';
+            return null;
+        }
+        if (bid.type === 'double') return hcp + ' HCP, courte dans la couleur adverse \u2014 contre d\'appel';
+        if (bid.type === 'redouble') return 'Main forte, surcontre pour montrer la force';
+
+        // Opening bids
+        if (myBids.length === 0 && partnerBids.length === 0) {
+            if (bid.level === 1 && bid.suit === 'NT') return hcp + ' HCP, main \u00e9quilibr\u00e9e \u2014 ouverture 1SA';
+            if (bid.level === 2 && bid.suit === 'C') return hcp + ' HCP \u2014 ouverture forte artificielle 2\u2663';
+            if (bid.level === 2 && bid.suit === 'NT') return hcp + ' HCP, \u00e9quilibr\u00e9e \u2014 ouverture forte 2SA';
+            if (bid.level === 1 && (bid.suit === 'H' || bid.suit === 'S'))
+                return hcp + ' HCP, ' + eval_.suitCounts[bid.suit] + ' cartes \u00e0 ' + SUIT_SYMBOLS[bid.suit] + ' \u2014 ouverture en majeure';
+            if (bid.level === 1)
+                return hcp + ' HCP, ' + eval_.suitCounts[bid.suit] + ' cartes \u00e0 ' + SUIT_SYMBOLS[bid.suit] + ' \u2014 ouverture en mineure';
+            if (bid.level === 2)
+                return hcp + ' HCP, ' + eval_.suitCounts[bid.suit] + ' cartes \u2014 barrage faible';
+        }
+
+        // Responses
+        if (myBids.length === 0 && partnerBids.length > 0) {
+            const pBid = partnerBids[0];
+            if (bid.level === 2 && bid.suit === 'C' && pBid.suit === 'NT') return 'Stayman \u2014 cherche un fit majeur 4-4';
+            if (bid.level === 2 && bid.suit === 'D' && pBid.suit === 'NT') return 'Texas \u2665 \u2014 montre 5+ c\u0153urs';
+            if (bid.level === 2 && bid.suit === 'H' && pBid.suit === 'NT') return 'Texas \u2660 \u2014 montre 5+ piques';
+            if (bid.suit === pBid.suit)
+                return eval_.suitCounts[bid.suit] + ' cartes de soutien, ' + tp + ' pts \u2014 fit trouv\u00e9 !';
+            if (bid.level === 4 && bid.suit === 'NT') return 'Blackwood \u2014 demande les as pour le chelem';
+            if (bid.suit === 'NT') return hcp + ' HCP, \u00e9quilibr\u00e9e \u2014 proposition SA';
+            return hcp + ' HCP, ' + (eval_.suitCounts[bid.suit] || '?') + ' cartes \u00e0 ' + (SUIT_SYMBOLS[bid.suit] || bid.suit) + ' \u2014 nouvelle couleur';
+        }
+
+        // Rebids
+        if (bid.level === 4 && bid.suit === 'NT') return 'Blackwood \u2014 exploration de chelem';
+        if (myBids.length > 0 && bid.suit === myBids[myBids.length - 1].suit)
+            return 'Redemande sa couleur (' + eval_.suitCounts[bid.suit] + ' cartes) \u2014 couleur solide';
+        if (bid.suit === 'NT') return 'Main \u00e9quilibr\u00e9e, ' + hcp + ' HCP \u2014 pr\u00e9cise la force';
+        return hcp + ' HCP, ' + (eval_.suitCounts[bid.suit] || '?') + ' cartes \u00e0 ' + (SUIT_SYMBOLS[bid.suit] || bid.suit);
     }
 
     // Simulate ideal play using master-level AI for all 4 positions
@@ -1952,7 +2014,7 @@ class BridgeApp {
         // Re-run expert bidding to get the expert contract
         let expertContract = gs.contract; // fallback to actual contract
         try {
-            const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+            const expertAI = new BridgeAI({ level: 'master', convention: this.settings.convention });
             const simBidding = new BiddingManager(gs.dealer);
             let safety = 0;
             while (!simBidding.isComplete && safety < 40) {
@@ -2044,9 +2106,9 @@ class BridgeApp {
         const cSuit = contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[contract.suit];
         const isExpertContract = contract !== gs.contract;
 
-        let html = '<div class="analysis-section"><h4>Jeu de la carte expert (4 joueurs experts)</h4>';
+        let html = '<div class="analysis-section"><h4>Jeu de la carte entre Ma\u00eetres</h4>';
         html += `<p class="analysis-comment">Contrat simulé: <strong>${contract.level}${cSuit}</strong> par <strong>${POSITION_FR[contract.declarer]}</strong>`;
-        if (isExpertContract) html += ' <span style="color:#f1c40f">(contrat expert)</span>';
+        if (isExpertContract) html += ' <span style="color:#f1c40f">(contrat du Ma\u00eetre)</span>';
         html += '</p>';
 
         html += `<p class="analysis-comment">Levées réalisées: <strong>${expertMade}</strong> / ${required} requises — `;
@@ -2094,6 +2156,75 @@ class BridgeApp {
         }
         html += '</table></div>';
 
+        // Add master play explanations
+        html += this._explainMasterPlays(simTricks, contract, gs);
+
+        return html;
+    }
+
+    // Generate explanations for notable plays in the master simulation
+    _explainMasterPlays(simTricks, contract, gs) {
+        const tips = [];
+        const trump = contract.suit;
+        const declarerTeam = teamOf(contract.declarer);
+
+        for (let i = 0; i < simTricks.length; i++) {
+            const trick = simTricks[i];
+            const winner = trick.getWinner();
+            if (!winner) continue;
+
+            // Opening lead explanation
+            if (i === 0) {
+                const leaderCard = trick.cards[trick.leader];
+                const leaderHand = gs.originalHands[trick.leader];
+                if (leaderCard && leaderHand) {
+                    const suitLen = leaderHand.filter(c => c.suit === leaderCard.suit).length;
+                    if (trump === 'NT') {
+                        tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame ' + leaderCard.toString() + ' : ' +
+                            (suitLen >= 4 ? '4\u00e8me meilleure de sa plus longue couleur (' + suitLen + ' cartes) pour \u00e9tablir des lev\u00e9es de longueur.' :
+                             suitLen === 1 ? 'singleton ! Esp\u00e8re couper au retour.' :
+                             'entame courte, cherche le point d\'entr\u00e9e du partenaire.'));
+                    } else {
+                        if (suitLen === 1) {
+                            tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame son singleton ' + leaderCard.toString() + ' : esp\u00e8re couper au retour !');
+                        } else if (leaderCard.rank === 'A' || leaderCard.rank === 'K') {
+                            tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame ' + leaderCard.toString() + ' : t\u00eate de s\u00e9quence pour prendre le contr\u00f4le.');
+                        } else {
+                            tips.push('Lev\u00e9e 1 \u2014 ' + POSITION_FR[trick.leader] + ' entame ' + leaderCard.toString() + ' (' + suitLen + ' cartes dans la couleur).');
+                        }
+                    }
+                }
+            }
+
+            // Trump drawn early by declarer
+            if (i <= 2 && trump !== 'NT' && trick.leader === contract.declarer) {
+                const leaderCard = trick.cards[trick.leader];
+                if (leaderCard && leaderCard.suit === trump) {
+                    tips.push('Lev\u00e9e ' + (i+1) + ' \u2014 Le d\u00e9clarant tire les atouts t\u00f4t pour emp\u00eacher les coupes adverses.');
+                }
+            }
+
+            // Finesse detected
+            for (const p of ['N','E','S','W']) {
+                const card = trick.cards[p];
+                if (!card) continue;
+                if ((card.rank === 'Q' || card.rank === 'J') && p !== trick.leader && winner === p) {
+                    const winCard = trick.cards[winner];
+                    if (winCard === card) {
+                        tips.push('Lev\u00e9e ' + (i+1) + ' \u2014 ' + POSITION_FR[p] + ' r\u00e9ussit une impasse avec ' + card.toString() + ' !');
+                    }
+                }
+            }
+        }
+
+        if (tips.length === 0) return '';
+
+        let html = '<div style="margin-top:10px">';
+        html += '<p style="color:#e8a020;font-weight:600;margin-bottom:6px">Explications du Ma\u00eetre :</p>';
+        for (const tip of tips) {
+            html += '<p class="analysis-comment">\ud83d\udca1 ' + tip + '</p>';
+        }
+        html += '</div>';
         return html;
     }
 
