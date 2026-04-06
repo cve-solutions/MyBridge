@@ -142,11 +142,16 @@ class BridgeApp {
             this._showScreen('settings-screen');
         });
 
-        // Logout button
+        // Logout buttons (game screen + settings screen)
         const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', () => this._logout());
-        }
+        if (logoutBtn) logoutBtn.addEventListener('click', () => this._logout());
+        const settingsLogoutBtn = document.getElementById('settings-logout-btn');
+        if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', () => this._logout());
+
+        // Admin: sync clubs button
+        const syncClubsBtn = document.getElementById('admin-sync-clubs-btn');
+        if (syncClubsBtn) syncClubsBtn.addEventListener('click', () => this._syncClubs());
+        this._loadClubSyncInfo();
 
         // Bidding controls
         document.querySelectorAll('.bid-level-btn').forEach(el => {
@@ -1185,6 +1190,40 @@ class BridgeApp {
         }
     }
 
+    async _loadClubSyncInfo() {
+        try {
+            const res = await fetch('/api/admin/clubs');
+            if (!res.ok) return;
+            const info = await res.json();
+            const countEl = document.getElementById('admin-club-count');
+            const dateEl = document.getElementById('admin-club-sync-date');
+            if (countEl) countEl.textContent = info.count || 0;
+            if (dateEl && info.lastSync) {
+                dateEl.textContent = 'Dernière MAJ : ' + new Date(info.lastSync).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } else if (dateEl) {
+                dateEl.textContent = 'Jamais synchronisé';
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    async _syncClubs() {
+        const btn = document.getElementById('admin-sync-clubs-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Synchronisation...'; }
+        try {
+            const res = await fetch('/api/admin/clubs/sync', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                this._showMessage(`${data.count} clubs synchronisés !`);
+                this._loadClubSyncInfo();
+            } else {
+                this._showMessage(data.error || 'Erreur de synchronisation');
+            }
+        } catch (e) {
+            this._showMessage('Erreur de connexion');
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'MAJ Clubs'; }
+    }
+
     async _logout() {
         try {
             await fetch('/api/logout', { method: 'POST' });
@@ -1406,6 +1445,8 @@ class BridgeApp {
         if (!gs) return;
 
         let html = '';
+        try {
+        // wrapped in try-catch so analysis errors don't silently fail
 
         // 1. Show all 4 hands
         html += '<div class="analysis-section"><h4>Les 4 mains</h4>';
@@ -1449,7 +1490,7 @@ class BridgeApp {
             html += '</div>';
 
             // Expert bidding sequence
-            html += this._generateExpertBiddingAnalysis(gs);
+            try { html += this._generateExpertBiddingAnalysis(gs); } catch (e) { console.error('Expert bidding analysis error:', e); }
         }
 
         // 3. Play analysis
@@ -1495,7 +1536,7 @@ class BridgeApp {
             html += '</table></div>';
 
             // Ideal play simulation
-            html += this._generateIdealPlayAnalysis(gs);
+            try { html += this._generateIdealPlayAnalysis(gs); } catch (e) { console.error('Ideal play analysis error:', e); }
         }
 
         // 4. Score recap
@@ -1510,7 +1551,12 @@ class BridgeApp {
         }
 
         // 5. Expert recommendations
-        html += this._generateExpertAdvice(gs);
+        try { html += this._generateExpertAdvice(gs); } catch (e) { console.error('Expert advice error:', e); }
+
+        } catch (e) {
+            console.error('Analysis error:', e);
+            html += `<div class="analysis-section"><p style="color:#e74c3c">Erreur lors de l'analyse: ${e.message}</p></div>`;
+        }
 
         document.getElementById('analysis-body').innerHTML = html;
         this._openModal('analysis-modal');
@@ -1622,6 +1668,10 @@ class BridgeApp {
                     declarerPos: contract.declarer,
                     dummyPos: contract.dummy,
                     originalHands: gs.originalHands,
+                    tricks: simTricks,
+                    phase: 'playing',
+                    tricksWon: { ...simTricksWon },
+                    humanPos: '__none__',
                     getPlayableCards: (pos) => {
                         const h = simHands[pos];
                         if (!trick.suitLed) return h;

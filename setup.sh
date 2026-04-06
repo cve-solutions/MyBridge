@@ -7,14 +7,14 @@
 # This script deploys the local files (from git clone, zip, etc.)
 # into /opt/mybridge. No git operations are performed.
 #
-# Domain: bridge.buscaillet.fr
+# Domain: game.bridge85.fr
 # Stack:  Node.js + Express + SQLite + NGINX + Let's Encrypt
 # ========================================================================
 
 set -euo pipefail
 
 # ==================== CONFIGURATION ====================
-DOMAIN="bridge.buscaillet.fr"
+DOMAIN="game.bridge85.fr"
 APP_DIR="/opt/mybridge"
 APP_USER="mybridge"
 APP_GROUP="mybridge"
@@ -330,7 +330,7 @@ setup_nginx() {
 server {
     listen 80;
     listen [::]:80;
-    server_name bridge.buscaillet.fr;
+    server_name game.bridge85.fr;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;

@@ -427,6 +427,48 @@ class CommunityManager {
             if (e.target.id === 'profile-modal') document.getElementById('profile-modal').classList.add('hidden');
         });
         document.getElementById('profile-save-btn').addEventListener('click', () => this._saveProfile());
+
+        // Club search via local API
+        const clubInput = document.getElementById('profile-club-name');
+        const clubCode = document.getElementById('profile-club-code');
+        if (clubInput) {
+            let _clubDebounce = null;
+            clubInput.addEventListener('input', () => {
+                clearTimeout(_clubDebounce);
+                const q = clubInput.value.trim();
+                if (q.length < 2) return;
+                _clubDebounce = setTimeout(() => this._searchClubs(q), 300);
+            });
+            clubInput.addEventListener('change', () => {
+                const selected = clubInput.value;
+                if (this._clubResults) {
+                    const match = this._clubResults.find(c => c.name === selected);
+                    if (match && clubCode) {
+                        clubCode.value = match.siren;
+                    }
+                }
+            });
+        }
+    }
+
+    async _searchClubs(query) {
+        try {
+            const res = await fetch(`/api/clubs/search?q=${encodeURIComponent(query)}`);
+            if (!res.ok) return;
+            const results = await res.json();
+            this._clubResults = results;
+
+            const datalist = document.getElementById('club-suggestions');
+            if (datalist) {
+                datalist.innerHTML = '';
+                for (const c of results) {
+                    const opt = document.createElement('option');
+                    opt.value = c.name;
+                    opt.textContent = `${c.postal_code} ${c.city} (${c.siren})`;
+                    datalist.appendChild(opt);
+                }
+            }
+        } catch (e) { /* ignore */ }
     }
 
     async _openProfile() {
