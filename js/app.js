@@ -43,6 +43,10 @@ class BridgeApp {
                 el.classList.add('selected');
                 this.settings.level = el.dataset.level;
             });
+            el.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                this._showLevelInfo(el.dataset.level);
+            });
         });
 
         // Convention selection
@@ -60,6 +64,10 @@ class BridgeApp {
                 document.querySelectorAll('[data-scoring]').forEach(e => e.classList.remove('selected'));
                 el.classList.add('selected');
                 this.settings.scoring = el.dataset.scoring;
+            });
+            el.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                this._showScoringInfo(el.dataset.scoring);
             });
         });
 
@@ -1508,6 +1516,145 @@ class BridgeApp {
         // In solo mode or for auto-detected alerts, just use the detected text
         // In multiplayer, we'd show a prompt - for now auto-fill
         callback(detectedText);
+    }
+
+    // ==================== LEVEL INFO ====================
+
+    _showLevelInfo(level) {
+        const infos = {
+            beginner: {
+                name: 'Débutant (Elo ~800)',
+                body: `<p>L'IA simule un joueur qui débute le bridge.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : ouvertures basiques seulement. <span style="color:#e74c3c">Oublie les conventions 30% du temps</span> (pas de Stayman, pas de Texas)</li>
+                        <li><strong>Erreurs de comptage</strong> : ±3 HCP de bruit — peut ouvrir avec 9 HCP ou passer avec 14</li>
+                        <li><strong>Jeu de la carte</strong> : quasi-aléatoire, joue souvent la plus petite carte</li>
+                        <li><strong>Pas de plan de jeu</strong>, pas de finesse, pas de signal</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : découvrir le bridge, s'amuser sans pression</p>`
+            },
+            initiate: {
+                name: 'Initié (Elo ~1000)',
+                body: `<p>L'IA connaît les bases mais manque de précision.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : ouvertures et réponses correctes, Stayman et Texas basiques</li>
+                        <li><strong>Erreurs</strong> : ±2 HCP de bruit — quelques enchères approximatives</li>
+                        <li><strong>Jeu de la carte</strong> : fournit correctement, essaie de gagner les plis</li>
+                        <li><strong>Oublie parfois</strong> les conventions (10% du temps)</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs qui connaissent les règles de base</p>`
+            },
+            intermediate: {
+                name: 'Intermédiaire (Elo ~1200)',
+                body: `<p>Un adversaire solide avec une bonne maîtrise des fondamentaux.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : système complet (ouvertures, réponses, rebids, Stayman, Texas, barrages)</li>
+                        <li><strong>Précision</strong> : ±1 HCP de bruit — rarement une enchère aberrante</li>
+                        <li><strong>Jeu de la carte</strong> : entame 4ème meilleure, gagne au moins cher, coupe quand possible</li>
+                        <li><strong>Surcoupe</strong> intelligente, ne coupe pas quand le partenaire gagne</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs réguliers de club</p>`
+            },
+            confirmed: {
+                name: 'Confirmé (Elo ~1500)',
+                body: `<p>Un adversaire expérimenté qui maîtrise les enchères compétitives.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : + contre d'appel, intervention, surenchère, overcall 1SA</li>
+                        <li><strong>Aucun bruit</strong> dans le comptage des points</li>
+                        <li><strong>Jeu de la carte</strong> : 2ème main basse, 3ème main haute, <span style="color:#f1c40f">finesse AQ et RV</span></li>
+                        <li><strong>Entame</strong> : singleton contre un contrat en couleur, séquence de tête</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs de compétition régionale</p>`
+            },
+            expert: {
+                name: 'Expert (Elo ~1800)',
+                body: `<p>Un adversaire de haut niveau avec une stratégie complète.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : + Blackwood 4SA, enchères de chelem, cue-bids</li>
+                        <li><strong>Plan de jeu</strong> : compte les levées sûres, développe les couleurs longues</li>
+                        <li><strong>Jeu de la carte</strong> : tire les atouts tôt en déclarant, préférence de couleur en défausse</li>
+                        <li><strong>Signalisation</strong> : défausse des couleurs faibles pour guider le partenaire</li>
+                    </ul>
+                    <p style="color:#888;margin-top:8px">Idéal pour : joueurs de compétition nationale</p>`
+            },
+            master: {
+                name: 'Maître (Elo ~2100)',
+                body: `<p>Le plus haut niveau de l'IA. Joue de manière quasi-optimale.</p>
+                    <ul>
+                        <li><strong>Enchères</strong> : toutes les conventions, sacrifices calculés, enchères de chelem précises</li>
+                        <li><strong>Jeu de la carte</strong> : toutes les techniques (finesse, squeeze simple, endplay)</li>
+                        <li><strong>Endplay</strong> : détecte les situations de mise en main en fin de donne</li>
+                        <li><strong>Défense</strong> : signalisation complète, comptage des mains adverses</li>
+                    </ul>
+                    <p style="color:#e94560;margin-top:8px">Attention : adversaire redoutable, même pour les meilleurs joueurs !</p>`
+            }
+        };
+        const info = infos[level] || { name: level, body: '<p>Information non disponible.</p>' };
+        document.getElementById('convention-modal-title').textContent = info.name;
+        document.getElementById('convention-modal-body').innerHTML = info.body;
+        this._openModal('convention-modal');
+    }
+
+    // ==================== SCORING INFO ====================
+
+    _showScoringInfo(scoring) {
+        const infos = {
+            duplicate: {
+                name: 'Duplicate (Tournoi)',
+                body: `<p>Le mode <strong>Duplicate</strong> est utilisé en compétition et en club. Chaque donne est indépendante.</p>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Calcul des points</h4>
+                    <table style="width:100%;font-size:0.9em;border-collapse:collapse;color:#ccc">
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.1)"><th style="text-align:left;padding:4px">Contrat réussi</th><th style="text-align:right;padding:4px">Points</th></tr>
+                        <tr><td style="padding:3px">Levées en mineure (♣♦)</td><td style="text-align:right">20 / levée</td></tr>
+                        <tr><td style="padding:3px">Levées en majeure (♥♠)</td><td style="text-align:right">30 / levée</td></tr>
+                        <tr><td style="padding:3px">Levées en SA</td><td style="text-align:right">40 + 30 / levée suiv.</td></tr>
+                        <tr style="border-top:1px solid rgba(255,255,255,0.1)"><td style="padding:3px"><strong>Prime de manche</strong> (100+ pts de contrat)</td><td style="text-align:right">300 NV / 500 V</td></tr>
+                        <tr><td style="padding:3px">Prime partielle (&lt;100 pts)</td><td style="text-align:right">50</td></tr>
+                        <tr><td style="padding:3px">Petit chelem (niveau 6)</td><td style="text-align:right">500 NV / 750 V</td></tr>
+                        <tr><td style="padding:3px">Grand chelem (niveau 7)</td><td style="text-align:right">1000 NV / 1500 V</td></tr>
+                    </table>
+                    <table style="width:100%;font-size:0.9em;border-collapse:collapse;color:#ccc;margin-top:10px">
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.1)"><th style="text-align:left;padding:4px">Chute</th><th style="text-align:right;padding:4px">Pénalité</th></tr>
+                        <tr><td style="padding:3px">Non vulnérable</td><td style="text-align:right">50 / levée de chute</td></tr>
+                        <tr><td style="padding:3px">Vulnérable</td><td style="text-align:right">100 / levée de chute</td></tr>
+                        <tr><td style="padding:3px">Contré NV</td><td style="text-align:right">100, 300, 500, +300</td></tr>
+                        <tr><td style="padding:3px">Contré V</td><td style="text-align:right">200, +300 par levée</td></tr>
+                    </table>
+                    <p style="color:#888;margin-top:10px"><strong>NV</strong> = Non Vulnérable, <strong>V</strong> = Vulnérable. La vulnérabilité suit un cycle fixe de 16 donnes.</p>`
+            },
+            rubber: {
+                name: 'Rubber (Partie libre)',
+                body: `<p>Le mode <strong>Rubber</strong> est le bridge de salon. Les donnes sont liées : il faut gagner <strong>2 manches</strong> pour remporter le rubber.</p>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Sous la ligne (vers la manche)</h4>
+                    <p>Seuls les points de <strong>levées du contrat</strong> comptent vers la manche :</p>
+                    <ul>
+                        <li>♣♦ : 20 pts/levée — ♥♠ : 30 pts/levée — SA : 40 + 30/levée</li>
+                        <li><strong>100 points</strong> sous la ligne = <strong>1 manche gagnée</strong></li>
+                        <li>Les deux côtés sont remis à zéro après chaque manche</li>
+                        <li>Exemples : 3SA (100) = manche ! 4♥ (120) = manche ! 2♠ (60) = partielle</li>
+                    </ul>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Au-dessus de la ligne (bonus)</h4>
+                    <ul>
+                        <li>Surlevées, primes de chelem, pénalités de chute</li>
+                        <li>Ces points ne comptent pas vers la manche</li>
+                    </ul>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Vulnérabilité</h4>
+                    <ul>
+                        <li>Gagner <strong>1 manche</strong> rend votre camp <strong>vulnérable</strong></li>
+                        <li>Vulnérable = pénalités de chute doublées, mais primes de manche plus élevées</li>
+                    </ul>
+                    <h4 style="color:#e94560;margin:12px 0 6px">Fin du Rubber</h4>
+                    <ul>
+                        <li><strong>2 manches gagnées</strong> = rubber terminé</li>
+                        <li>Bonus : <strong>+700</strong> si victoire 2-0, <strong>+500</strong> si victoire 2-1</li>
+                        <li>Le score final = total au-dessus + au-dessous de la ligne</li>
+                    </ul>`
+            }
+        };
+        const info = infos[scoring] || { name: scoring, body: '<p>Information non disponible.</p>' };
+        document.getElementById('convention-modal-title').textContent = info.name;
+        document.getElementById('convention-modal-body').innerHTML = info.body;
+        this._openModal('convention-modal');
     }
 
     // ==================== CONVENTION CARD ====================
