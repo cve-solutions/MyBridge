@@ -151,7 +151,10 @@ class BridgeApp {
         // Admin: sync clubs button
         const syncClubsBtn = document.getElementById('admin-sync-clubs-btn');
         if (syncClubsBtn) syncClubsBtn.addEventListener('click', () => this._syncClubs());
-        this._loadClubSyncInfo();
+
+        // Admin panel starts hidden, shown by _setAdminVisible when role is confirmed
+        const adminPanel = document.getElementById('admin-panel');
+        if (adminPanel) adminPanel.classList.add('hidden');
 
         // Bidding controls
         document.querySelectorAll('.bid-level-btn').forEach(el => {
@@ -1188,6 +1191,90 @@ class BridgeApp {
         } catch (e) {
             // Offline
         }
+    }
+
+    _setAdminVisible(isAdmin) {
+        const section = document.getElementById('admin-panel');
+        if (section) section.classList.toggle('hidden', !isAdmin);
+        if (isAdmin) {
+            this._loadClubSyncInfo();
+            this._loadAdminUsers();
+        }
+    }
+
+    async _loadAdminUsers() {
+        try {
+            const res = await fetch('/api/admin/users');
+            if (!res.ok) return;
+            const users = await res.json();
+            const container = document.getElementById('admin-user-list');
+            if (!container) return;
+
+            if (!users.length) {
+                container.innerHTML = '<p class="hint-text">Aucun utilisateur</p>';
+                return;
+            }
+
+            let html = '<table class="admin-table"><thead><tr><th>Utilisateur</th><th>Rôle</th><th>Parties</th><th>Dernière connexion</th><th>Actions</th></tr></thead><tbody>';
+            for (const u of users) {
+                const lastLogin = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : 'Jamais';
+                const roleClass = u.role === 'admin' ? 'admin-role-admin' : '';
+                html += `<tr>
+                    <td><strong>${this._escapeHtml(u.display_name || u.username)}</strong><br><span class="hint-text">${this._escapeHtml(u.username)}</span></td>
+                    <td><span class="${roleClass}">${u.role === 'admin' ? 'Admin' : 'Joueur'}</span></td>
+                    <td>${u.games_played}</td>
+                    <td>${lastLogin}</td>
+                    <td class="admin-actions">
+                        ${u.role !== 'admin' ? `<button class="admin-btn-sm admin-btn-promote" data-uid="${u.id}" title="Promouvoir admin">Admin</button>` : `<button class="admin-btn-sm admin-btn-demote" data-uid="${u.id}" title="Rétrograder">Joueur</button>`}
+                        <button class="admin-btn-sm admin-btn-delete" data-uid="${u.id}" title="Supprimer">Suppr.</button>
+                    </td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+
+            // Bind actions
+            container.querySelectorAll('.admin-btn-promote').forEach(btn => {
+                btn.addEventListener('click', () => this._adminSetRole(parseInt(btn.dataset.uid), 'admin'));
+            });
+            container.querySelectorAll('.admin-btn-demote').forEach(btn => {
+                btn.addEventListener('click', () => this._adminSetRole(parseInt(btn.dataset.uid), 'user'));
+            });
+            container.querySelectorAll('.admin-btn-delete').forEach(btn => {
+                btn.addEventListener('click', () => this._adminDeleteUser(parseInt(btn.dataset.uid)));
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    _escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text || '';
+        return d.innerHTML;
+    }
+
+    async _adminSetRole(userId, role) {
+        try {
+            const res = await fetch(`/api/admin/users/${userId}/role`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role })
+            });
+            const data = await res.json();
+            if (data.error) { this._showMessage(data.error); return; }
+            this._loadAdminUsers();
+        } catch (e) { this._showMessage('Erreur'); }
+    }
+
+    async _adminDeleteUser(userId) {
+        if (!confirm('Supprimer cet utilisateur et toutes ses données ?')) return;
+        try {
+            const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.error) { this._showMessage(data.error); return; }
+            this._showMessage('Utilisateur supprimé');
+            this._loadAdminUsers();
+            if (this.community) this.community.loadPlayers();
+        } catch (e) { this._showMessage('Erreur'); }
     }
 
     async _loadClubSyncInfo() {

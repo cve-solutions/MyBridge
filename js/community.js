@@ -52,9 +52,12 @@ class CommunityManager {
             if (res.ok) {
                 const data = await res.json();
                 this.myUserId = data.id;
+                this.myRole = data.role;
                 this.loadPlayers();
                 this._loadUnreadCounts();
                 this._loadMyRating();
+                // Show/hide admin section
+                if (this.app) this.app._setAdminVisible(data.role === 'admin');
             }
         } catch (e) { /* ignore */ }
     }

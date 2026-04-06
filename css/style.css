@@ -97,7 +97,9 @@ body {
     padding-top: 15px;
     border-top: 1px solid rgba(255,255,255,0.1);
 }
-.admin-section h2 { color: #888; font-size: 0.95em; }
+.admin-section h2 { color: #e8a020; font-size: 1em; }
+.admin-subsection { margin-top: 18px; }
+.admin-subtitle { color: #aaa; font-size: 0.9em; margin-bottom: 8px; }
 .admin-row {
     display: flex;
     align-items: center;
@@ -112,6 +114,43 @@ body {
     display: block;
     margin-top: 2px;
 }
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85em;
+    color: #ccc;
+}
+.admin-table th {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    color: #888;
+    font-weight: 600;
+}
+.admin-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    vertical-align: middle;
+}
+.admin-table tr:hover td { background: rgba(255,255,255,0.03); }
+.admin-role-admin { color: #e8a020; font-weight: 600; }
+.admin-actions { white-space: nowrap; }
+.admin-btn-sm {
+    padding: 3px 8px;
+    font-size: 0.8em;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 4px;
+    transition: all 0.2s;
+}
+.admin-btn-sm:hover { border-color: #e94560; color: #fff; }
+.admin-btn-promote { color: #e8a020; border-color: rgba(232,160,32,0.3); }
+.admin-btn-promote:hover { background: rgba(232,160,32,0.15); border-color: #e8a020; }
+.admin-btn-delete { color: #e74c3c; border-color: rgba(231,76,60,0.3); }
+.admin-btn-delete:hover { background: rgba(231,76,60,0.15); border-color: #e74c3c; }
 
 /* Seat Picker */
 .seat-picker {
