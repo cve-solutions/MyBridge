@@ -2,6 +2,23 @@
 // Supports 6 levels: beginner, initiate, intermediate, confirmed, expert, master
 // Supports conventions: sef, sayc, acol, two_over_one, standard
 
+// Node.js: import bridge globals that are available as globals in browser
+if (typeof module !== 'undefined' && typeof evaluateHand === 'undefined') {
+    const _b = require('./bridge.js');
+    global.evaluateHand = _b.evaluateHand;
+    global.Bid = _b.Bid;
+    global.POSITIONS = _b.POSITIONS;
+    global.SUITS = _b.SUITS;
+    global.SUIT_ORDER = _b.SUIT_ORDER;
+    global.SUIT_SYMBOLS = _b.SUIT_SYMBOLS;
+    global.RANK_VALUES = _b.RANK_VALUES;
+    global.HCP_VALUES = _b.HCP_VALUES;
+    global.partnerOf = _b.partnerOf;
+    global.nextPos = _b.nextPos;
+    global.teamOf = _b.teamOf;
+    global.isRedSuit = function(s) { return s === 'D' || s === 'H'; };
+}
+
 class BridgeAI {
     constructor(settings) {
         this.level = settings.level || 'intermediate';
