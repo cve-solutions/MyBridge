@@ -25,6 +25,7 @@ const Database = require('better-sqlite3');
 const { WebSocketServer } = require('ws');
 const db = require('./db');
 const gm = require('./gameManager');
+const dds = require('./dds');
 
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -521,6 +522,31 @@ app.get('/api/clubs/search', apiLimiter, requireAuth, (req, res) => {
 });
 
 // Club sync info
+// ==================== DOUBLE-DUMMY SOLVER ====================
+
+app.post('/api/dds', apiLimiter, requireAuth, (req, res) => {
+    const { hands } = req.body;
+    if (!hands) return res.status(400).json({ error: 'Mains requises.' });
+
+    try {
+        const Card = require('../js/bridge.js').Card;
+        const reconstructed = {};
+        for (const pos of ['N', 'E', 'S', 'W']) {
+            reconstructed[pos] = (hands[pos] || []).map(c => new Card(c.suit, c.rank));
+        }
+
+        // Only solve the 5 strains for each declarer (fast: heuristic fallback on timeout)
+        const ddTable = dds.calcDDTable(reconstructed);
+        const vulnerability = req.body.vulnerability || 'None';
+        const par = dds.calcPar(ddTable, vulnerability);
+
+        res.json({ ddTable, par });
+    } catch (e) {
+        console.error('[DDS] Error:', e.message);
+        res.status(500).json({ error: 'Erreur de calcul.' });
+    }
+});
+
 // ==================== ADMIN ROUTES ====================
 
 // List all users
