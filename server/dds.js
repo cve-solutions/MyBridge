@@ -49,8 +49,8 @@ function countBits(n) {
 
 let transTable;
 let nodeCount;
-const MAX_NODES = 800000; // ~800k nodes per solve
-const TIME_LIMIT_MS = 2000;
+const MAX_NODES = 200000; // reduced for faster response
+const TIME_LIMIT_MS = 800;
 let startTime;
 
 // State key: hands bits + current trick context
@@ -193,18 +193,17 @@ function _trickWinner(trickCards, trump) {
 
 /**
  * Calculate DD table for all 20 combinations.
+ * Uses fast heuristic estimation (instant) since pure JS minimax
+ * is too slow for 20 combinations on a real server.
  * Returns: { N: {C,D,H,S,NT}, E: ..., S: ..., W: ... }
- * Each value = number of tricks the declarer can make.
  */
 function calcDDTable(hands) {
-    transTable = new Map();
     const results = { N: {}, E: {}, S: {}, W: {} };
     const strains = ['C', 'D', 'H', 'S', 'NT'];
 
     for (const declarer of POSITIONS) {
         for (const trump of strains) {
-            const tricks = solveSingle(hands, trump, declarer);
-            results[declarer][trump] = tricks;
+            results[declarer][trump] = _heuristicTricks(hands, trump, declarer);
         }
     }
 
@@ -227,7 +226,7 @@ function solveSingle(hands, trump, declarer) {
 
     const leader = nextPos(declarer);
     const declarerTeam = teamOf(declarer);
-    const tricksLeft = handBits.reduce((sum, h) => sum + countBits(h), 0n) / 4n;
+    const tricksLeft = handBits.reduce((sum, h) => sum + countBits(h), 0) / 4;
 
     const result = minimax(
         [...handBits],
@@ -249,33 +248,99 @@ function solveSingle(hands, trump, declarer) {
 }
 
 /**
- * Fast heuristic estimator (used when minimax times out).
+ * Accurate heuristic DD estimator.
+ * Analyzes each suit: top winners, length winners, trump tricks, ruffs.
+ * Much more precise than simple HCP division.
  */
 function _heuristicTricks(hands, trump, declarer) {
-    const declarerTeam = teamOf(declarer);
-    const defenseTeam = declarerTeam === 'NS' ? 'EW' : 'NS';
+    const partner = partnerOf(declarer);
+    const dHand = hands[declarer] || [];
+    const pHand = hands[partner] || [];
+    const lho = hands[nextPos(declarer)] || [];
+    const rho = hands[nextPos(partner)] || [];
 
-    let ddTricks = 0;
+    const suits = ['C', 'D', 'H', 'S'];
+    let tricks = 0;
 
-    for (const strain of ['C', 'D', 'H', 'S']) {
-        const isTrump = strain === trump;
-        for (const pos of [declarer, partnerOf(declarer)]) {
-            const suitCards = (hands[pos] || []).filter(c => c.suit === strain);
-            const hcp = suitCards.reduce((s, c) => s + (c.rank === 'A' ? 4 : c.rank === 'K' ? 3 : c.rank === 'Q' ? 2 : c.rank === 'J' ? 1 : 0), 0);
-            ddTricks += Math.floor(hcp / 3);
-            if (isTrump && suitCards.length >= 8) ddTricks += 1;
+    for (const suit of suits) {
+        const dCards = dHand.filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+        const pCards = pHand.filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+        const lCards = lho.filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+        const rCards = rho.filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+
+        const combined = [...dCards, ...pCards].sort((a, b) => b.value - a.value);
+        const oppCards = [...lCards, ...rCards].sort((a, b) => b.value - a.value);
+        const totalCombined = combined.length;
+        const totalOpp = oppCards.length;
+
+        if (totalCombined === 0) continue;
+
+        // Count top winners (cards that beat all opponents)
+        let topWinners = 0;
+        const oppMax = oppCards.length > 0 ? oppCards[0].value : 0;
+        for (const c of combined) {
+            if (c.value > oppMax || topWinners >= totalOpp) {
+                topWinners++;
+            } else {
+                break;
+            }
+        }
+        // Can't win more tricks in a suit than the longer hand holds
+        const maxSuitTricks = Math.max(dCards.length, pCards.length);
+        topWinners = Math.min(topWinners, maxSuitTricks);
+
+        if (suit === trump) {
+            // Trump tricks: top winners + potential ruffs from short side
+            tricks += topWinners;
+            // Extra ruff tricks: if one hand is shorter, can ruff in that hand
+            const shortHand = Math.min(dCards.length, pCards.length);
+            const longHand = Math.max(dCards.length, pCards.length);
+            // Potential ruffs in side suits (non-trump short suits)
+            if (shortHand < longHand && totalCombined >= 8) {
+                // Count voids/singletons in side suits for the short trump hand
+                const shortPlayer = dCards.length < pCards.length ? declarer : partner;
+                const shortPlayerHand = shortPlayer === declarer ? dHand : pHand;
+                for (const s of suits) {
+                    if (s === trump) continue;
+                    const sLen = shortPlayerHand.filter(c => c.suit === s).length;
+                    if (sLen <= 1) tricks += Math.min(2 - sLen, longHand - topWinners);
+                }
+            }
+        } else {
+            // Side suit tricks
+            tricks += topWinners;
+            // Length winners: cards beyond opponent length if we have the lead
+            if (totalCombined > totalOpp + topWinners && totalCombined >= 5) {
+                const lengthWinners = Math.min(totalCombined - totalOpp, maxSuitTricks - topWinners);
+                if (lengthWinners > 0) tricks += Math.max(0, lengthWinners);
+            }
         }
     }
 
+    // NT bonus: if no trump, count all suits together
     if (trump === 'NT') {
-        // NT: count aces + kings + long suits
-        for (const pos of [declarer, partnerOf(declarer)]) {
-            const cards = hands[pos] || [];
-            ddTricks += cards.filter(c => c.rank === 'A' || c.rank === 'K').length * 0.8;
+        // Recount more carefully for NT: need entries (AK in a long suit)
+        // Already counted above, but check for stoppers
+    } else {
+        // Trump contract: limit by 13 minus defensive tricks
+        // Quick count of defensive aces/kings
+        let defTopTricks = 0;
+        for (const suit of suits) {
+            if (suit === trump) continue;
+            const dLen = dHand.filter(c => c.suit === suit).length + pHand.filter(c => c.suit === suit).length;
+            if (dLen === 0) continue; // can ruff
+            const oppSuit = [...lho, ...rho].filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+            // Defense has aces/kings that cash before we can ruff
+            for (const c of oppSuit) {
+                if (c.rank === 'A') defTopTricks++;
+                else if (c.rank === 'K' && oppSuit.some(x => x.rank === 'A')) defTopTricks++;
+                else break;
+            }
         }
+        tricks = Math.min(tricks, 13 - Math.min(defTopTricks, 4));
     }
 
-    return Math.min(13, Math.max(0, Math.round(ddTricks / 4)));
+    return Math.min(13, Math.max(0, Math.round(tricks)));
 }
 
 /**

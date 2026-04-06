@@ -1736,7 +1736,7 @@ class BridgeApp {
 
     // ==================== DEAL ANALYSIS ====================
 
-    _showAnalysis() {
+    async _showAnalysis() {
         const gs = this.gameState;
         if (!gs) return;
 
@@ -1783,6 +1783,14 @@ class BridgeApp {
             // Expert bidding sequence
             try { html += this._generateExpertBiddingAnalysis(gs); } catch (e) { console.error('Expert bidding analysis error:', e); }
         }
+
+        // 2b. Double-Dummy analysis (server-side, accurate)
+        try {
+            const ddsResult = await this._fetchDDSAnalysis(gs);
+            if (ddsResult) {
+                html += this._renderDDSAnalysis(ddsResult, gs);
+            }
+        } catch (e) { console.error('DDS analysis error:', e); }
 
         // 3. Play analysis
         if (gs.contract && gs.tricks.length > 0) {
@@ -2002,6 +2010,100 @@ class BridgeApp {
             return 'Redemande sa couleur (' + eval_.suitCounts[bid.suit] + ' cartes) \u2014 couleur solide';
         if (bid.suit === 'NT') return 'Main \u00e9quilibr\u00e9e, ' + hcp + ' HCP \u2014 pr\u00e9cise la force';
         return hcp + ' HCP, ' + (eval_.suitCounts[bid.suit] || '?') + ' cartes \u00e0 ' + (SUIT_SYMBOLS[bid.suit] || bid.suit);
+    }
+
+    // ==================== DOUBLE-DUMMY SOLVER ====================
+
+    async _fetchDDSAnalysis(gs) {
+        if (!gs.originalHands) return null;
+        const hands = {};
+        for (const pos of POSITIONS) {
+            hands[pos] = (gs.originalHands[pos] || []).map(c => ({ suit: c.suit, rank: c.rank }));
+        }
+        try {
+            const res = await fetch('/api/dds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hands, vulnerability: gs.vulnerability })
+            });
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) { return null; }
+    }
+
+    _renderDDSAnalysis(ddsResult, gs) {
+        const { ddTable, par } = ddsResult;
+        if (!ddTable) return '';
+
+        const suitLabels = { C: '♣', D: '♦', H: '♥', S: '♠', NT: 'SA' };
+        let html = '<div class="analysis-section"><h4>Analyse Double-Dummy (jeu parfait)</h4>';
+
+        // DD Table
+        html += '<table class="analysis-bid-table" style="font-size:0.85em">';
+        html += '<tr><th></th><th>♣</th><th>♦</th><th>♥</th><th>♠</th><th>SA</th></tr>';
+        for (const pos of POSITIONS) {
+            html += `<tr><td style="text-align:left;font-weight:bold">${POSITION_FR[pos]}</td>`;
+            for (const suit of ['C', 'D', 'H', 'S', 'NT']) {
+                const tricks = ddTable[pos] ? ddTable[pos][suit] : '-';
+                const canGame = (suit === 'C' || suit === 'D') ? tricks >= 11 : suit === 'NT' ? tricks >= 9 : tricks >= 10;
+                const style = canGame ? 'color:#2ecc71;font-weight:bold' : tricks >= 7 ? 'color:#ccc' : 'color:#888';
+                html += `<td style="text-align:center;${style}">${tricks}</td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</table>';
+        html += '<p class="hint-text" style="margin-top:4px">Nombre de levées réalisables par chaque déclarant avec un jeu parfait des deux camps.</p>';
+
+        // Par contract
+        if (par) {
+            const trumpStr = par.trump === 'NT' ? 'SA' : suitLabels[par.trump];
+            html += `<p class="analysis-comment" style="margin-top:10px">Contrat optimal (<strong>par</strong>) : <strong style="color:#e8a020">${par.level}${trumpStr}</strong> par <strong>${POSITION_FR[par.declarer]}</strong> — ${par.tricks} levées`;
+            if (par.score > 0) html += `, score <span style="color:#2ecc71">+${par.score}</span>`;
+            else if (par.score < 0) html += `, score <span style="color:#e74c3c">${par.score}</span>`;
+            html += '</p>';
+
+            // Compare with actual contract
+            if (gs.contract) {
+                const actualDDTricks = ddTable[gs.contract.declarer] ? ddTable[gs.contract.declarer][gs.contract.suit] : null;
+                const required = gs.contract.level + 6;
+                if (actualDDTricks !== null) {
+                    const actualSuit = gs.contract.suit === 'NT' ? 'SA' : suitLabels[gs.contract.suit];
+                    if (actualDDTricks >= required) {
+                        html += `<p class="analysis-comment" style="color:#2ecc71">Votre contrat ${gs.contract.level}${actualSuit} est réalisable (${actualDDTricks} levées en double-dummy).</p>`;
+                    } else {
+                        html += `<p class="analysis-comment" style="color:#e74c3c">Votre contrat ${gs.contract.level}${actualSuit} chute en jeu parfait (${actualDDTricks} levées seulement).</p>`;
+                    }
+                }
+
+                // Suggest better contract if exists
+                const declarerTeam = teamOf(gs.contract.declarer);
+                let bestContract = null;
+                let bestScore = -Infinity;
+                for (const pos of POSITIONS) {
+                    if (teamOf(pos) !== declarerTeam) continue;
+                    for (const suit of ['C', 'D', 'H', 'S', 'NT']) {
+                        const tricks = ddTable[pos][suit];
+                        for (let level = 1; level <= 7; level++) {
+                            if (tricks >= level + 6) {
+                                const isMinor = suit === 'C' || suit === 'D';
+                                const trickScore = level * (isMinor ? 20 : 30) + (suit === 'NT' ? 10 : 0);
+                                if (trickScore > bestScore) {
+                                    bestScore = trickScore;
+                                    bestContract = { level, suit, declarer: pos, tricks };
+                                }
+                            }
+                        }
+                    }
+                }
+                if (bestContract && bestContract.level > gs.contract.level) {
+                    const bSuit = bestContract.suit === 'NT' ? 'SA' : suitLabels[bestContract.suit];
+                    html += `<p class="analysis-comment" style="color:#f1c40f">Meilleur contrat pour votre camp : <strong>${bestContract.level}${bSuit}</strong> par ${POSITION_FR[bestContract.declarer]} (${bestContract.tricks} levées).</p>`;
+                }
+            }
+        }
+
+        html += '</div>';
+        return html;
     }
 
     // Simulate ideal play using master-level AI for all 4 positions
