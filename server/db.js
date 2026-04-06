@@ -131,6 +131,20 @@ function init() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_mp_games_table ON multiplayer_games(table_id);
+
+        CREATE TABLE IF NOT EXISTS ffb_clubs (
+            siren TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            city TEXT DEFAULT '',
+            postal_code TEXT DEFAULT '',
+            address TEXT DEFAULT '',
+            department TEXT DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ffb_clubs_name ON ffb_clubs(name);
+        CREATE INDEX IF NOT EXISTS idx_ffb_clubs_city ON ffb_clubs(city);
+        CREATE INDEX IF NOT EXISTS idx_ffb_clubs_dept ON ffb_clubs(department);
     `);
 
     // Migration: add trick_delay column if missing (existing installs)
@@ -466,6 +480,50 @@ function respondToInvitation(invitationId, toUserId, accept) {
     return inv;
 }
 
+// ==================== FFB CLUBS ====================
+
+function searchClubs(query, limit = 20) {
+    const q = `%${query}%`;
+    return db.prepare(`
+        SELECT siren, name, city, postal_code, department
+        FROM ffb_clubs
+        WHERE name LIKE ? OR city LIKE ? OR postal_code LIKE ?
+        ORDER BY name ASC
+        LIMIT ?
+    `).all(q, q, q, limit);
+}
+
+function getClubCount() {
+    const row = db.prepare('SELECT COUNT(*) as count FROM ffb_clubs').get();
+    return row ? row.count : 0;
+}
+
+function upsertClubs(clubs) {
+    const stmt = db.prepare(`
+        INSERT INTO ffb_clubs (siren, name, city, postal_code, address, department, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(siren) DO UPDATE SET
+            name = excluded.name,
+            city = excluded.city,
+            postal_code = excluded.postal_code,
+            address = excluded.address,
+            department = excluded.department,
+            updated_at = CURRENT_TIMESTAMP
+    `);
+    const tx = db.transaction(() => {
+        for (const c of clubs) {
+            stmt.run(c.siren, c.name, c.city, c.postalCode, c.address, c.department);
+        }
+    });
+    tx();
+}
+
+function getClubSyncInfo() {
+    const count = getClubCount();
+    const row = db.prepare('SELECT MAX(updated_at) as last_sync FROM ffb_clubs').get();
+    return { count, lastSync: row ? row.last_sync : null };
+}
+
 function close() {
     if (db) db.close();
 }
@@ -476,6 +534,7 @@ module.exports = {
     getAllPlayers, sendMessage, getConversation, markMessagesRead, getUnreadCounts,
     updateRating, getPlayerRating, getRankings, getRankTitle,
     getPlayerProfile, savePlayerProfile, getGameHistory, getGameSummary,
+    searchClubs, getClubCount, upsertClubs, getClubSyncInfo,
     createInvitation, respondToInvitation,
     close
 };

@@ -43,7 +43,7 @@ app.use(helmet({
             scriptSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:"],
-            connectSrc: ["'self'", "ws:", "wss:", "https://recherche-entreprises.api.gouv.fr"],
+            connectSrc: ["'self'", "ws:", "wss:"],
             fontSrc: ["'self'"],
             objectSrc: ["'none'"],
             frameAncestors: ["'none'"]
@@ -498,9 +498,107 @@ function broadcastOnlineStatus() {
     }
 }
 
+// ==================== FFB CLUBS ====================
+
+// Search clubs (local DB)
+app.get('/api/clubs/search', apiLimiter, requireAuth, (req, res) => {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    const results = db.searchClubs(q);
+    res.json(results);
+});
+
+// Club sync info
+app.get('/api/admin/clubs', apiLimiter, requireAuth, (req, res) => {
+    res.json(db.getClubSyncInfo());
+});
+
+// Trigger manual club sync (any authenticated user for now)
+app.post('/api/admin/clubs/sync', apiLimiter, requireAuth, async (req, res) => {
+    try {
+        const count = await syncFFBClubs();
+        res.json({ success: true, count });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Fetch all bridge clubs from API and store locally
+async function syncFFBClubs() {
+    const allClubs = [];
+    let page = 1;
+    const perPage = 25;
+
+    console.log('[FFB Sync] Starting club sync...');
+
+    while (true) {
+        const url = `https://recherche-entreprises.api.gouv.fr/search?q=bridge+club&per_page=${perPage}&page=${page}&etat_administratif=A`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.warn(`[FFB Sync] API error on page ${page}: ${response.status}`);
+            break;
+        }
+        const data = await response.json();
+        const results = data.results || [];
+        if (results.length === 0) break;
+
+        for (const r of results) {
+            allClubs.push({
+                siren: r.siren || '',
+                name: r.nom_complet || '',
+                city: r.siege?.libelle_commune || '',
+                postalCode: r.siege?.code_postal || '',
+                address: r.siege?.adresse || '',
+                department: r.siege?.departement || ''
+            });
+        }
+
+        if (results.length < perPage) break;
+        page++;
+        // Respectful rate: 200ms between pages
+        await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    if (allClubs.length > 0) {
+        db.upsertClubs(allClubs);
+    }
+
+    console.log(`[FFB Sync] Done: ${allClubs.length} clubs synced.`);
+    return allClubs.length;
+}
+
+// Auto-sync clubs weekly (every Sunday at 3am)
+function scheduleWeeklyClubSync() {
+    const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+    const now = new Date();
+    // Next Sunday 3am
+    const nextSunday = new Date(now);
+    nextSunday.setDate(now.getDate() + (7 - now.getDay()) % 7);
+    nextSunday.setHours(3, 0, 0, 0);
+    if (nextSunday <= now) nextSunday.setDate(nextSunday.getDate() + 7);
+
+    const delay = nextSunday - now;
+    setTimeout(() => {
+        syncFFBClubs().catch(e => console.error('[FFB Sync] Auto-sync error:', e.message));
+        setInterval(() => {
+            syncFFBClubs().catch(e => console.error('[FFB Sync] Auto-sync error:', e.message));
+        }, ONE_WEEK);
+    }, delay);
+
+    console.log(`[FFB Sync] Next auto-sync scheduled for ${nextSunday.toISOString()}`);
+}
+
 // ==================== START ====================
 
 db.init();
+
+// Auto-sync clubs on first start if DB is empty, then schedule weekly
+const clubInfo = db.getClubSyncInfo();
+if (clubInfo.count === 0) {
+    console.log('[FFB Sync] No clubs in DB, triggering initial sync...');
+    syncFFBClubs().catch(e => console.error('[FFB Sync] Initial sync error:', e.message));
+}
+scheduleWeeklyClubSync();
 
 const server = app.listen(PORT, '127.0.0.1', () => {
     console.log(`MyBridge server running on http://127.0.0.1:${PORT}`);

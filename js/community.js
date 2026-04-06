@@ -428,7 +428,7 @@ class CommunityManager {
         });
         document.getElementById('profile-save-btn').addEventListener('click', () => this._saveProfile());
 
-        // Club search via API recherche-entreprises.api.gouv.fr
+        // Club search via local API
         const clubInput = document.getElementById('profile-club-name');
         const clubCode = document.getElementById('profile-club-code');
         if (clubInput) {
@@ -436,10 +436,9 @@ class CommunityManager {
             clubInput.addEventListener('input', () => {
                 clearTimeout(_clubDebounce);
                 const q = clubInput.value.trim();
-                if (q.length < 3) return;
-                _clubDebounce = setTimeout(() => this._searchClubs(q), 400);
+                if (q.length < 2) return;
+                _clubDebounce = setTimeout(() => this._searchClubs(q), 300);
             });
-            // When user selects a suggestion, auto-fill the code
             clubInput.addEventListener('change', () => {
                 const selected = clubInput.value;
                 if (this._clubResults) {
@@ -454,16 +453,9 @@ class CommunityManager {
 
     async _searchClubs(query) {
         try {
-            const url = `https://recherche-entreprises.api.gouv.fr/search?q=bridge+${encodeURIComponent(query)}&nature_juridique=9220&per_page=20&page=1`;
-            const res = await fetch(url);
+            const res = await fetch(`/api/clubs/search?q=${encodeURIComponent(query)}`);
             if (!res.ok) return;
-            const data = await res.json();
-            const results = (data.results || []).map(r => ({
-                name: r.nom_complet || '',
-                siren: r.siren || '',
-                city: r.siege?.libelle_commune || '',
-                cp: r.siege?.code_postal || ''
-            }));
+            const results = await res.json();
             this._clubResults = results;
 
             const datalist = document.getElementById('club-suggestions');
@@ -472,11 +464,11 @@ class CommunityManager {
                 for (const c of results) {
                     const opt = document.createElement('option');
                     opt.value = c.name;
-                    opt.textContent = `${c.cp} ${c.city} (${c.siren})`;
+                    opt.textContent = `${c.postal_code} ${c.city} (${c.siren})`;
                     datalist.appendChild(opt);
                 }
             }
-        } catch (e) { /* API unavailable */ }
+        } catch (e) { /* ignore */ }
     }
 
     async _openProfile() {

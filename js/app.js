@@ -148,6 +148,11 @@ class BridgeApp {
         const settingsLogoutBtn = document.getElementById('settings-logout-btn');
         if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', () => this._logout());
 
+        // Admin: sync clubs button
+        const syncClubsBtn = document.getElementById('admin-sync-clubs-btn');
+        if (syncClubsBtn) syncClubsBtn.addEventListener('click', () => this._syncClubs());
+        this._loadClubSyncInfo();
+
         // Bidding controls
         document.querySelectorAll('.bid-level-btn').forEach(el => {
             el.addEventListener('click', () => this._selectBidLevel(parseInt(el.dataset.level)));
@@ -1183,6 +1188,40 @@ class BridgeApp {
         } catch (e) {
             // Offline
         }
+    }
+
+    async _loadClubSyncInfo() {
+        try {
+            const res = await fetch('/api/admin/clubs');
+            if (!res.ok) return;
+            const info = await res.json();
+            const countEl = document.getElementById('admin-club-count');
+            const dateEl = document.getElementById('admin-club-sync-date');
+            if (countEl) countEl.textContent = info.count || 0;
+            if (dateEl && info.lastSync) {
+                dateEl.textContent = 'Dernière MAJ : ' + new Date(info.lastSync).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } else if (dateEl) {
+                dateEl.textContent = 'Jamais synchronisé';
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    async _syncClubs() {
+        const btn = document.getElementById('admin-sync-clubs-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Synchronisation...'; }
+        try {
+            const res = await fetch('/api/admin/clubs/sync', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                this._showMessage(`${data.count} clubs synchronisés !`);
+                this._loadClubSyncInfo();
+            } else {
+                this._showMessage(data.error || 'Erreur de synchronisation');
+            }
+        } catch (e) {
+            this._showMessage('Erreur de connexion');
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'MAJ Clubs'; }
     }
 
     async _logout() {

@@ -92,6 +92,27 @@ body {
     border-bottom: 1px solid rgba(233,69,96,0.3);
 }
 
+.admin-section {
+    margin-top: 30px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+.admin-section h2 { color: #888; font-size: 0.95em; }
+.admin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.admin-info {
+    font-size: 0.9em;
+    color: #aaa;
+}
+.admin-info .hint-text {
+    display: block;
+    margin-top: 2px;
+}
+
 /* Seat Picker */
 .seat-picker {
     display: flex;
