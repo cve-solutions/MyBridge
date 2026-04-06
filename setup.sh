@@ -64,15 +64,20 @@ fix_permissions() {
     chmod 755 "$APP_DIR"
 
     # Static directories: readable by NGINX
-    find "$APP_DIR/css" "$APP_DIR/js" -type d -exec chmod 755 {} \; 2>/dev/null || true
-    find "$APP_DIR/css" "$APP_DIR/js" -type f -exec chmod 644 {} \; 2>/dev/null || true
+    for dir in css js docs; do
+        if [[ -d "$APP_DIR/$dir" ]]; then
+            find "$APP_DIR/$dir" -type d -exec chmod 755 {} \;
+            find "$APP_DIR/$dir" -type f -exec chmod 644 {} \;
+        fi
+    done
 
     # HTML and public files at root
     chmod 644 "$APP_DIR"/*.html 2>/dev/null || true
     chmod 644 "$APP_DIR"/version.json 2>/dev/null || true
 
-    # Server data dir: only mybridge user
+    # Server directory: only mybridge user (includes gameManager.js, dds.js, ai.js requires)
     chmod 750 "$APP_DIR/server" 2>/dev/null || true
+    find "$APP_DIR/server" -maxdepth 1 -name '*.js' -exec chmod 640 {} \; 2>/dev/null || true
 }
 
 # ==================== UPDATE MODE ====================
@@ -97,7 +102,11 @@ do_update() {
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     if [[ -f "$APP_DIR/server/data/mybridge.db" ]]; then
         cp "$APP_DIR/server/data/mybridge.db" "$BACKUP_DIR/mybridge_${TIMESTAMP}.db"
-        log_ok "Backup: $BACKUP_DIR/mybridge_${TIMESTAMP}.db"
+        log_ok "Backup DB: $BACKUP_DIR/mybridge_${TIMESTAMP}.db"
+    fi
+    if [[ -f "$APP_DIR/server/data/sessions.db" ]]; then
+        cp "$APP_DIR/server/data/sessions.db" "$BACKUP_DIR/sessions_${TIMESTAMP}.db"
+        log_ok "Backup sessions: $BACKUP_DIR/sessions_${TIMESTAMP}.db"
     fi
 
     log_info "Copie des fichiers depuis $SOURCE_DIR..."
