@@ -1726,6 +1726,17 @@ body {
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
+.score-mode-tag {
+    text-align: center;
+    font-size: 0.8em;
+    color: #888;
+    margin-bottom: 10px;
+    padding: 3px 10px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    display: inline-block;
+}
+
 .score-line.total {
     border-top: 2px solid #e94560;
     border-bottom: none;

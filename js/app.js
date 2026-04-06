@@ -1089,6 +1089,9 @@ class BridgeApp {
 
         let html = '';
 
+        // Mode indicator
+        html += `<div class="score-mode-tag">${gs.isRubber ? 'Partie libre (Rubber)' : 'Duplicate (Tournoi)'}</div>`;
+
         // Contract info
         const suitStr = gs.contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[gs.contract.suit];
         html += `<div class="score-line"><span>Contrat</span><span>${gs.contract.level}${suitStr} par ${POSITION_FR[gs.contract.declarer]}</span></div>`;
@@ -1098,23 +1101,56 @@ class BridgeApp {
 
         html += '<div style="height:15px"></div>';
 
-        // Score details
-        for (const detail of score.details) {
-            const cls = detail.value >= 0 ? 'score-positive' : 'score-negative';
-            html += `<div class="score-line"><span>${detail.label}</span><span class="${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></div>`;
+        if (gs.isRubber && gs.rubber) {
+            // ============ RUBBER SCORING ============
+            const rubberResult = gs.getRubberScore();
+
+            for (const detail of rubberResult.details) {
+                const cls = detail.value >= 0 ? 'score-positive' : 'score-negative';
+                const zoneLabel = detail.zone === 'below' ? ' ▼' : detail.zone === 'game' ? ' ★' : ' ▲';
+                html += `<div class="score-line"><span>${detail.label}${zoneLabel}</span><span class="${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></div>`;
+            }
+
+            html += '<div style="height:10px"></div>';
+
+            // Rubber state: below the line
+            html += `<div class="score-line"><span>Sous la ligne NS</span><span>${rubberResult.below.NS}</span></div>`;
+            html += `<div class="score-line"><span>Sous la ligne EO</span><span>${rubberResult.below.EW}</span></div>`;
+
+            // Games
+            html += `<div class="score-line" style="margin-top:8px"><span>Manches NS</span><span style="color:#2ecc71;font-weight:bold">${rubberResult.games.NS}</span></div>`;
+            html += `<div class="score-line"><span>Manches EO</span><span style="color:#2ecc71;font-weight:bold">${rubberResult.games.EW}</span></div>`;
+
+            // Vulnerability
+            const vuln = gs.rubber.getVulnerability();
+            const vulnText = vuln === 'None' ? 'Personne' : vuln === 'Both' ? 'Tous' : vuln === 'NS' ? 'Nord-Sud' : 'Est-Ouest';
+            html += `<div class="score-line"><span>Vulnérable</span><span style="color:#e94560">${vulnText}</span></div>`;
+
+            // Total above + below
+            html += `<div class="score-line total" style="margin-top:10px"><span>Total NS</span><span>${rubberResult.totalNS}</span></div>`;
+            html += `<div class="score-line total"><span>Total EO</span><span>${rubberResult.totalEW}</span></div>`;
+
+            if (rubberResult.isComplete) {
+                const winnerText = rubberResult.winner === 'NS' ? 'Nord-Sud' : 'Est-Ouest';
+                html += `<div class="score-line" style="margin-top:12px;text-align:center"><span style="color:#f1c40f;font-weight:bold;font-size:1.1em">Rubber terminé ! Victoire ${winnerText}</span></div>`;
+            }
+        } else {
+            // ============ DUPLICATE SCORING ============
+            for (const detail of score.details) {
+                const cls = detail.value >= 0 ? 'score-positive' : 'score-negative';
+                html += `<div class="score-line"><span>${detail.label}</span><span class="${cls}">${detail.value > 0 ? '+' : ''}${detail.value}</span></div>`;
+            }
+
+            const nsScore = score.ns;
+            const cls = nsScore >= 0 ? 'score-positive' : 'score-negative';
+            html += `<div class="score-line total"><span>Score Nord-Sud</span><span class="${cls}">${nsScore > 0 ? '+' : ''}${nsScore}</span></div>`;
+
+            gs.totalScore.NS += score.ns;
+            gs.totalScore.EW += score.ew;
+
+            html += `<div class="score-line" style="margin-top:15px"><span>Total cumulé NS</span><span>${gs.totalScore.NS}</span></div>`;
+            html += `<div class="score-line"><span>Total cumulé EO</span><span>${gs.totalScore.EW}</span></div>`;
         }
-
-        // Total
-        const nsScore = score.ns;
-        const cls = nsScore >= 0 ? 'score-positive' : 'score-negative';
-        html += `<div class="score-line total"><span>Score Nord-Sud</span><span class="${cls}">${nsScore > 0 ? '+' : ''}${nsScore}</span></div>`;
-
-        // Update running total
-        gs.totalScore.NS += score.ns;
-        gs.totalScore.EW += score.ew;
-
-        html += `<div class="score-line" style="margin-top:15px"><span>Total cumulé NS</span><span>${gs.totalScore.NS}</span></div>`;
-        html += `<div class="score-line"><span>Total cumulé EO</span><span>${gs.totalScore.EW}</span></div>`;
 
         detailsEl.innerHTML = html;
 

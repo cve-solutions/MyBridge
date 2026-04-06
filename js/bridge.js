@@ -434,6 +434,131 @@ function calculateScore(contract, tricksMade, vulnerable) {
     return result;
 }
 
+// ==================== RUBBER SCORING ====================
+
+class RubberState {
+    constructor() {
+        // Points "below the line" (trick score toward game)
+        this.below = { NS: 0, EW: 0 };
+        // Points "above the line" (bonuses, penalties)
+        this.above = { NS: 0, EW: 0 };
+        // Games won in this rubber
+        this.games = { NS: 0, EW: 0 };
+        // History of completed games
+        this.gameHistory = [];
+        this.isComplete = false;
+        this.winner = null;
+    }
+
+    getVulnerability() {
+        const nsVuln = this.games.NS >= 1;
+        const ewVuln = this.games.EW >= 1;
+        if (nsVuln && ewVuln) return 'Both';
+        if (nsVuln) return 'NS';
+        if (ewVuln) return 'EW';
+        return 'None';
+    }
+
+    // Apply a deal result and return rubber-specific scoring details
+    applyDeal(contract, tricksMade, declarerVuln) {
+        if (!contract || this.isComplete) return { below: 0, above: 0, details: [] };
+
+        const team = teamOf(contract.declarer);
+        const otherTeam = team === 'NS' ? 'EW' : 'NS';
+        const level = contract.level;
+        const suit = contract.suit;
+        const doubled = contract.doubled;
+        const redoubled = contract.redoubled;
+        const required = level + 6;
+        const overtricks = tricksMade - required;
+        const isMinor = (suit === 'C' || suit === 'D');
+        const perTrick = isMinor ? 20 : 30;
+        const details = [];
+
+        if (overtricks >= 0) {
+            // === CONTRACT MADE ===
+            // Below the line: trick score (counts toward game)
+            let trickScore = level * perTrick;
+            if (suit === 'NT') trickScore += 10;
+            if (doubled) trickScore *= 2;
+            if (redoubled) trickScore *= 4;
+
+            this.below[team] += trickScore;
+            details.push({ label: `Levées (sous la ligne)`, value: trickScore, zone: 'below' });
+
+            // Above the line: overtricks
+            if (overtricks > 0) {
+                let otScore;
+                if (redoubled) otScore = overtricks * (declarerVuln ? 400 : 200);
+                else if (doubled) otScore = overtricks * (declarerVuln ? 200 : 100);
+                else otScore = overtricks * perTrick;
+                this.above[team] += otScore;
+                details.push({ label: `Surlevées (${overtricks})`, value: otScore, zone: 'above' });
+            }
+
+            // Slam bonuses (above the line)
+            if (level === 6) {
+                const bonus = declarerVuln ? 750 : 500;
+                this.above[team] += bonus;
+                details.push({ label: 'Prime petit chelem', value: bonus, zone: 'above' });
+            } else if (level === 7) {
+                const bonus = declarerVuln ? 1500 : 1000;
+                this.above[team] += bonus;
+                details.push({ label: 'Prime grand chelem', value: bonus, zone: 'above' });
+            }
+
+            // Insult bonus
+            if (doubled) { this.above[team] += 50; details.push({ label: 'Prime de contré', value: 50, zone: 'above' }); }
+            if (redoubled) { this.above[team] += 50; details.push({ label: 'Prime de surcontré', value: 50, zone: 'above' }); }
+
+            // Check if game is won (100+ below the line)
+            if (this.below[team] >= 100) {
+                this.games[team]++;
+                details.push({ label: `Manche gagnée ! (${this.games[team]}${this.games[team] === 1 ? 'ère' : 'ème'})`, value: 0, zone: 'game' });
+                this.gameHistory.push({ winner: team, nsBelow: this.below.NS, ewBelow: this.below.EW });
+                // Reset below the line for both teams
+                this.below.NS = 0;
+                this.below.EW = 0;
+
+                // Check rubber won (2 games)
+                if (this.games[team] >= 2) {
+                    this.isComplete = true;
+                    this.winner = team;
+                    // Rubber bonus
+                    const otherGames = this.games[otherTeam];
+                    const rubberBonus = otherGames === 0 ? 700 : 500;
+                    this.above[team] += rubberBonus;
+                    details.push({ label: `Rubber gagné ${this.games[team]}-${otherGames}`, value: rubberBonus, zone: 'above' });
+                }
+            }
+        } else {
+            // === CONTRACT DOWN ===
+            const down = -overtricks;
+            let penalty;
+            if (redoubled) {
+                penalty = declarerVuln ? (down === 1 ? 400 : 400 + (down - 1) * 600) : (down === 1 ? 200 : down === 2 ? 600 : down === 3 ? 1000 : 1000 + (down - 3) * 600);
+            } else if (doubled) {
+                penalty = declarerVuln ? (down === 1 ? 200 : 200 + (down - 1) * 300) : (down === 1 ? 100 : down === 2 ? 300 : down === 3 ? 500 : 500 + (down - 3) * 300);
+            } else {
+                penalty = down * (declarerVuln ? 100 : 50);
+            }
+            this.above[otherTeam] += penalty;
+            details.push({ label: `Chute de ${down}`, value: -penalty, zone: 'above' });
+        }
+
+        return {
+            below: { ...this.below },
+            above: { ...this.above },
+            games: { ...this.games },
+            details,
+            isComplete: this.isComplete,
+            winner: this.winner,
+            totalNS: this.above.NS + this.below.NS,
+            totalEW: this.above.EW + this.below.EW
+        };
+    }
+}
+
 // ==================== VULNERABILITY ====================
 function getVulnerability(dealNumber) {
     // Standard 16-board vulnerability cycle
@@ -519,6 +644,9 @@ class GameState {
         this.totalScore = { NS: 0, EW: 0 };
         this.vulnerability = 'None';
         this.dealer = 'N';
+        // Rubber mode
+        this.isRubber = settings.scoring === 'rubber';
+        this.rubber = this.isRubber ? new RubberState() : null;
     }
 
     get humanPos() {
@@ -549,7 +677,8 @@ class GameState {
 
     startDeal() {
         this.dealer = getDealer(this.dealNumber);
-        this.vulnerability = getVulnerability(this.dealNumber);
+        // In rubber mode, vulnerability is determined by games won
+        this.vulnerability = this.isRubber && this.rubber ? this.rubber.getVulnerability() : getVulnerability(this.dealNumber);
         this.hands = dealCards();
         this.originalHands = {};
         for (const pos of POSITIONS) {
@@ -612,6 +741,14 @@ class GameState {
         const tricksMade = this.tricksWon[declarerTeam];
         const isVuln = isVulnerable(this.contract.declarer, this.vulnerability);
         return calculateScore(this.contract, tricksMade, isVuln);
+    }
+
+    getRubberScore() {
+        if (!this.isRubber || !this.rubber || !this.contract) return null;
+        const declarerTeam = teamOf(this.contract.declarer);
+        const tricksMade = this.tricksWon[declarerTeam];
+        const isVuln = isVulnerable(this.contract.declarer, this.vulnerability);
+        return this.rubber.applyDeal(this.contract, tricksMade, isVuln);
     }
 
     // ==================== SNAPSHOT / UNDO ====================
@@ -735,7 +872,7 @@ function shouldAlert(bid, bidding, convention) {
 // ==================== CommonJS export for Node.js server use ====================
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        Card, Bid, BiddingManager, Trick, GameState,
+        Card, Bid, BiddingManager, Trick, GameState, RubberState,
         calculateScore, evaluateHand, dealCards, createDeck, shuffleDeck,
         getVulnerability, getDealer, isVulnerable,
         nextPos, partnerOf, teamOf, shouldAlert,
