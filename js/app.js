@@ -417,9 +417,19 @@ class BridgeApp {
         const showCards = gs.shouldShowCards(pos);
         const isPlayPhase = gs.phase === 'playing';
         const isDummy = isPlayPhase && pos === gs.dummyPos;
-        const isHumanTurn = isPlayPhase && gs.currentTrick &&
-            gs.currentTrick.currentPlayer === pos &&
-            gs.isHumanControlled(pos);
+        const currentPlayer = isPlayPhase && gs.currentTrick ? gs.currentTrick.currentPlayer : null;
+        const isHumanTurn = isPlayPhase && currentPlayer === pos && gs.isHumanControlled(pos);
+
+        // Determine if clicking this hand should show a helpful message
+        const isHumanDeclarer = gs.contract && gs.declarerPos === gs.humanPos;
+        const dummyMustPlay = isPlayPhase && currentPlayer === gs.dummyPos && isHumanDeclarer;
+        const humanMustPlay = isPlayPhase && currentPlayer === gs.humanPos;
+        const wrongHandMessage = isPlayPhase && showCards && !isHumanTurn ? (() => {
+            if (pos === gs.humanPos && dummyMustPlay) return 'Jouez une carte du mort !';
+            if (pos === gs.dummyPos && humanMustPlay) return 'C\'est à vous de jouer, pas au mort !';
+            if (pos === gs.humanPos || pos === gs.dummyPos) return 'Ce n\'est pas votre tour.';
+            return null;
+        })() : null;
 
         const playableCards = isHumanTurn ? gs.getPlayableCards(pos) : [];
 
@@ -450,6 +460,9 @@ class BridgeApp {
                         if (isHumanTurn && playableCards.some(c => c.equals(card))) {
                             cardEl.classList.add('playable');
                             cardEl.addEventListener('click', () => this._humanPlayCard(pos, card));
+                        } else if (wrongHandMessage) {
+                            cardEl.classList.add('not-my-turn');
+                            cardEl.addEventListener('click', () => this._showMessage(wrongHandMessage));
                         }
                         suitRow.appendChild(cardEl);
                     }
@@ -472,6 +485,9 @@ class BridgeApp {
                 if (isHumanTurn && playableCards.some(c => c.equals(card))) {
                     cardEl.classList.add('playable');
                     cardEl.addEventListener('click', () => this._humanPlayCard(pos, card));
+                } else if (wrongHandMessage) {
+                    cardEl.classList.add('not-my-turn');
+                    cardEl.addEventListener('click', () => this._showMessage(wrongHandMessage));
                 }
             } else {
                 cardEl.classList.add('face-down');
@@ -873,7 +889,17 @@ class BridgeApp {
     _humanPlayCard(pos, card) {
         const gs = this.gameState;
         if (gs.phase !== 'playing') return;
-        if (gs.currentTrick.currentPlayer !== pos) return;
+        const currentPlayer = gs.currentTrick.currentPlayer;
+        if (currentPlayer !== pos) {
+            if (currentPlayer === gs.dummyPos && gs.declarerPos === gs.humanPos) {
+                this._showMessage('Jouez une carte du mort !');
+            } else if (pos === gs.dummyPos && currentPlayer === gs.humanPos) {
+                this._showMessage('C\'est à vous de jouer, pas au mort !');
+            } else {
+                this._showMessage('Ce n\'est pas votre tour.');
+            }
+            return;
+        }
 
         // Verify card is playable
         const playable = gs.getPlayableCards(pos);

@@ -1271,6 +1271,12 @@ body {
     color: #e74c3c;
 }
 
+.cards-container .card.not-my-turn,
+.dummy-suit-row .card.not-my-turn {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
 .cards-container .card.playable {
     cursor: pointer;
     border: 2px solid #f1c40f;
