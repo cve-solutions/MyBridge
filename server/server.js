@@ -632,7 +632,7 @@ function scheduleWeeklyClubSync() {
 
 // ==================== START ====================
 
-db.init();
+const sqliteDb = db.init();
 
 // Auto-sync clubs on first start if DB is empty, then schedule weekly
 const clubInfo = db.getClubSyncInfo();
@@ -750,7 +750,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // Initialize game manager now that wsClients map exists
-gm.init(db, wsClients);
+gm.init(sqliteDb, wsClients);
 
 // Graceful shutdown
 function shutdown() {
