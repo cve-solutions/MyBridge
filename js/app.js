@@ -1406,6 +1406,8 @@ class BridgeApp {
         if (!gs) return;
 
         let html = '';
+        try {
+        // wrapped in try-catch so analysis errors don't silently fail
 
         // 1. Show all 4 hands
         html += '<div class="analysis-section"><h4>Les 4 mains</h4>';
@@ -1449,7 +1451,7 @@ class BridgeApp {
             html += '</div>';
 
             // Expert bidding sequence
-            html += this._generateExpertBiddingAnalysis(gs);
+            try { html += this._generateExpertBiddingAnalysis(gs); } catch (e) { console.error('Expert bidding analysis error:', e); }
         }
 
         // 3. Play analysis
@@ -1495,7 +1497,7 @@ class BridgeApp {
             html += '</table></div>';
 
             // Ideal play simulation
-            html += this._generateIdealPlayAnalysis(gs);
+            try { html += this._generateIdealPlayAnalysis(gs); } catch (e) { console.error('Ideal play analysis error:', e); }
         }
 
         // 4. Score recap
@@ -1510,7 +1512,12 @@ class BridgeApp {
         }
 
         // 5. Expert recommendations
-        html += this._generateExpertAdvice(gs);
+        try { html += this._generateExpertAdvice(gs); } catch (e) { console.error('Expert advice error:', e); }
+
+        } catch (e) {
+            console.error('Analysis error:', e);
+            html += `<div class="analysis-section"><p style="color:#e74c3c">Erreur lors de l'analyse: ${e.message}</p></div>`;
+        }
 
         document.getElementById('analysis-body').innerHTML = html;
         this._openModal('analysis-modal');
@@ -1622,6 +1629,10 @@ class BridgeApp {
                     declarerPos: contract.declarer,
                     dummyPos: contract.dummy,
                     originalHands: gs.originalHands,
+                    tricks: simTricks,
+                    phase: 'playing',
+                    tricksWon: { ...simTricksWon },
+                    humanPos: '__none__',
                     getPlayableCards: (pos) => {
                         const h = simHands[pos];
                         if (!trick.suitLed) return h;
