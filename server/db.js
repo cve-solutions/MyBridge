@@ -147,6 +147,13 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_ffb_clubs_dept ON ffb_clubs(department);
     `);
 
+    // Migration: add role column if missing
+    try {
+        db.prepare('SELECT role FROM users LIMIT 0').get();
+    } catch (e) {
+        db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
+    }
+
     // Migration: add trick_delay column if missing (existing installs)
     try {
         db.prepare('SELECT trick_delay FROM user_settings LIMIT 0').get();
@@ -168,6 +175,18 @@ function init() {
         tx();
     }
 
+    // Create default admin account if no admin exists
+    const adminExists = db.prepare("SELECT id FROM users WHERE role = 'admin'").get();
+    if (!adminExists) {
+        const adminHash = bcrypt.hashSync('admin', SALT_ROUNDS);
+        const res = db.prepare("INSERT OR IGNORE INTO users (username, password_hash, display_name, role) VALUES ('admin', ?, 'Administrateur', 'admin')").run(adminHash);
+        if (res.changes > 0) {
+            db.prepare('INSERT OR IGNORE INTO user_settings (user_id) VALUES (?)').run(res.lastInsertRowid);
+            db.prepare('INSERT OR IGNORE INTO player_ratings (user_id) VALUES (?)').run(res.lastInsertRowid);
+            console.log('[DB] Default admin account created (username: admin, password: admin)');
+        }
+    }
+
     return db;
 }
 
@@ -184,7 +203,7 @@ function createUser(username, password, displayName) {
 }
 
 function authenticateUser(username, password) {
-    const stmt = db.prepare('SELECT id, username, password_hash, display_name FROM users WHERE username = ?');
+    const stmt = db.prepare('SELECT id, username, password_hash, display_name, role FROM users WHERE username = ?');
     const user = stmt.get(username);
     if (!user) return null;
 
@@ -193,7 +212,7 @@ function authenticateUser(username, password) {
     // Update last login
     db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
 
-    return { id: user.id, username: user.username, displayName: user.display_name };
+    return { id: user.id, username: user.username, displayName: user.display_name, role: user.role || 'user' };
 }
 
 function getUserSettings(userId) {
@@ -480,6 +499,41 @@ function respondToInvitation(invitationId, toUserId, accept) {
     return inv;
 }
 
+// ==================== ADMIN: USER MANAGEMENT ====================
+
+function getAllUsers() {
+    return db.prepare(`
+        SELECT u.id, u.username, u.display_name, u.role, u.created_at, u.last_login,
+               COALESCE(pr.rating, 1200) as rating,
+               COALESCE(pr.games_played, 0) as games_played
+        FROM users u
+        LEFT JOIN player_ratings pr ON u.id = pr.user_id
+        ORDER BY u.created_at DESC
+    `).all();
+}
+
+function setUserRole(userId, role) {
+    const valid = ['user', 'admin'];
+    if (!valid.includes(role)) return false;
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+    return true;
+}
+
+function deleteUser(userId) {
+    // Don't allow deleting the last admin
+    const admins = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get();
+    const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+    if (user && user.role === 'admin' && admins.count <= 1) return false;
+
+    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    return true;
+}
+
+function isAdmin(userId) {
+    const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+    return user && user.role === 'admin';
+}
+
 // ==================== FFB CLUBS ====================
 
 function searchClubs(query, limit = 20) {
@@ -535,6 +589,7 @@ module.exports = {
     updateRating, getPlayerRating, getRankings, getRankTitle,
     getPlayerProfile, savePlayerProfile, getGameHistory, getGameSummary,
     searchClubs, getClubCount, upsertClubs, getClubSyncInfo,
+    getAllUsers, setUserRole, deleteUser, isAdmin,
     createInvitation, respondToInvitation,
     close
 };

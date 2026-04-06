@@ -150,6 +150,16 @@ function requireAuth(req, res, next) {
     next();
 }
 
+function requireAdmin(req, res, next) {
+    if (!req.session.userId) {
+        return res.status(401).json({ error: 'Non authentifié' });
+    }
+    if (!db.isAdmin(req.session.userId)) {
+        return res.status(403).json({ error: 'Accès réservé aux administrateurs.' });
+    }
+    next();
+}
+
 // ==================== STATIC FILES ====================
 
 // Serve login page for unauthenticated users
@@ -227,6 +237,7 @@ app.post('/api/login', authLimiter, (req, res) => {
 
     req.session.userId = user.id;
     req.session.username = user.username;
+    req.session.role = user.role;
     res.json({ success: true, user });
 });
 
@@ -241,7 +252,8 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', requireAuth, (req, res) => {
-    res.json({ id: req.session.userId, username: req.session.username });
+    const isAdm = db.isAdmin(req.session.userId);
+    res.json({ id: req.session.userId, username: req.session.username, role: isAdm ? 'admin' : 'user' });
 });
 
 // ==================== SETTINGS ROUTES ====================
@@ -509,12 +521,42 @@ app.get('/api/clubs/search', apiLimiter, requireAuth, (req, res) => {
 });
 
 // Club sync info
-app.get('/api/admin/clubs', apiLimiter, requireAuth, (req, res) => {
+// ==================== ADMIN ROUTES ====================
+
+// List all users
+app.get('/api/admin/users', apiLimiter, requireAdmin, (req, res) => {
+    res.json(db.getAllUsers());
+});
+
+// Change user role
+app.put('/api/admin/users/:id/role', apiLimiter, requireAdmin, (req, res) => {
+    const userId = parseInt(req.params.id);
+    const { role } = req.body;
+    if (!role) return res.status(400).json({ error: 'Rôle requis.' });
+    if (userId === req.session.userId && role !== 'admin') {
+        return res.status(400).json({ error: 'Vous ne pouvez pas vous retirer le rôle admin.' });
+    }
+    db.setUserRole(userId, role);
+    res.json({ success: true });
+});
+
+// Delete user
+app.delete('/api/admin/users/:id', apiLimiter, requireAdmin, (req, res) => {
+    const userId = parseInt(req.params.id);
+    if (userId === req.session.userId) {
+        return res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte.' });
+    }
+    const ok = db.deleteUser(userId);
+    if (!ok) return res.status(400).json({ error: 'Impossible de supprimer cet utilisateur.' });
+    res.json({ success: true });
+});
+
+app.get('/api/admin/clubs', apiLimiter, requireAdmin, (req, res) => {
     res.json(db.getClubSyncInfo());
 });
 
 // Trigger manual club sync (any authenticated user for now)
-app.post('/api/admin/clubs/sync', apiLimiter, requireAuth, async (req, res) => {
+app.post('/api/admin/clubs/sync', apiLimiter, requireAdmin, async (req, res) => {
     try {
         const count = await syncFFBClubs();
         res.json({ success: true, count });

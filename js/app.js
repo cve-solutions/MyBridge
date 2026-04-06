@@ -151,7 +151,10 @@ class BridgeApp {
         // Admin: sync clubs button
         const syncClubsBtn = document.getElementById('admin-sync-clubs-btn');
         if (syncClubsBtn) syncClubsBtn.addEventListener('click', () => this._syncClubs());
-        this._loadClubSyncInfo();
+
+        // Admin panel starts hidden, shown by _setAdminVisible when role is confirmed
+        const adminPanel = document.getElementById('admin-panel');
+        if (adminPanel) adminPanel.classList.add('hidden');
 
         // Bidding controls
         document.querySelectorAll('.bid-level-btn').forEach(el => {
@@ -414,9 +417,19 @@ class BridgeApp {
         const showCards = gs.shouldShowCards(pos);
         const isPlayPhase = gs.phase === 'playing';
         const isDummy = isPlayPhase && pos === gs.dummyPos;
-        const isHumanTurn = isPlayPhase && gs.currentTrick &&
-            gs.currentTrick.currentPlayer === pos &&
-            gs.isHumanControlled(pos);
+        const currentPlayer = isPlayPhase && gs.currentTrick ? gs.currentTrick.currentPlayer : null;
+        const isHumanTurn = isPlayPhase && currentPlayer === pos && gs.isHumanControlled(pos);
+
+        // Determine if clicking this hand should show a helpful message
+        const isHumanDeclarer = gs.contract && gs.declarerPos === gs.humanPos;
+        const dummyMustPlay = isPlayPhase && currentPlayer === gs.dummyPos && isHumanDeclarer;
+        const humanMustPlay = isPlayPhase && currentPlayer === gs.humanPos;
+        const wrongHandMessage = isPlayPhase && showCards && !isHumanTurn ? (() => {
+            if (pos === gs.humanPos && dummyMustPlay) return 'Jouez une carte du mort !';
+            if (pos === gs.dummyPos && humanMustPlay) return 'C\'est à vous de jouer, pas au mort !';
+            if (pos === gs.humanPos || pos === gs.dummyPos) return 'Ce n\'est pas votre tour.';
+            return null;
+        })() : null;
 
         const playableCards = isHumanTurn ? gs.getPlayableCards(pos) : [];
 
@@ -447,6 +460,9 @@ class BridgeApp {
                         if (isHumanTurn && playableCards.some(c => c.equals(card))) {
                             cardEl.classList.add('playable');
                             cardEl.addEventListener('click', () => this._humanPlayCard(pos, card));
+                        } else if (wrongHandMessage) {
+                            cardEl.classList.add('not-my-turn');
+                            cardEl.addEventListener('click', () => this._showMessage(wrongHandMessage));
                         }
                         suitRow.appendChild(cardEl);
                     }
@@ -469,6 +485,9 @@ class BridgeApp {
                 if (isHumanTurn && playableCards.some(c => c.equals(card))) {
                     cardEl.classList.add('playable');
                     cardEl.addEventListener('click', () => this._humanPlayCard(pos, card));
+                } else if (wrongHandMessage) {
+                    cardEl.classList.add('not-my-turn');
+                    cardEl.addEventListener('click', () => this._showMessage(wrongHandMessage));
                 }
             } else {
                 cardEl.classList.add('face-down');
@@ -870,7 +889,17 @@ class BridgeApp {
     _humanPlayCard(pos, card) {
         const gs = this.gameState;
         if (gs.phase !== 'playing') return;
-        if (gs.currentTrick.currentPlayer !== pos) return;
+        const currentPlayer = gs.currentTrick.currentPlayer;
+        if (currentPlayer !== pos) {
+            if (currentPlayer === gs.dummyPos && gs.declarerPos === gs.humanPos) {
+                this._showMessage('Jouez une carte du mort !');
+            } else if (pos === gs.dummyPos && currentPlayer === gs.humanPos) {
+                this._showMessage('C\'est à vous de jouer, pas au mort !');
+            } else {
+                this._showMessage('Ce n\'est pas votre tour.');
+            }
+            return;
+        }
 
         // Verify card is playable
         const playable = gs.getPlayableCards(pos);
@@ -1188,6 +1217,90 @@ class BridgeApp {
         } catch (e) {
             // Offline
         }
+    }
+
+    _setAdminVisible(isAdmin) {
+        const section = document.getElementById('admin-panel');
+        if (section) section.classList.toggle('hidden', !isAdmin);
+        if (isAdmin) {
+            this._loadClubSyncInfo();
+            this._loadAdminUsers();
+        }
+    }
+
+    async _loadAdminUsers() {
+        try {
+            const res = await fetch('/api/admin/users');
+            if (!res.ok) return;
+            const users = await res.json();
+            const container = document.getElementById('admin-user-list');
+            if (!container) return;
+
+            if (!users.length) {
+                container.innerHTML = '<p class="hint-text">Aucun utilisateur</p>';
+                return;
+            }
+
+            let html = '<table class="admin-table"><thead><tr><th>Utilisateur</th><th>Rôle</th><th>Parties</th><th>Dernière connexion</th><th>Actions</th></tr></thead><tbody>';
+            for (const u of users) {
+                const lastLogin = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : 'Jamais';
+                const roleClass = u.role === 'admin' ? 'admin-role-admin' : '';
+                html += `<tr>
+                    <td><strong>${this._escapeHtml(u.display_name || u.username)}</strong><br><span class="hint-text">${this._escapeHtml(u.username)}</span></td>
+                    <td><span class="${roleClass}">${u.role === 'admin' ? 'Admin' : 'Joueur'}</span></td>
+                    <td>${u.games_played}</td>
+                    <td>${lastLogin}</td>
+                    <td class="admin-actions">
+                        ${u.role !== 'admin' ? `<button class="admin-btn-sm admin-btn-promote" data-uid="${u.id}" title="Promouvoir admin">Admin</button>` : `<button class="admin-btn-sm admin-btn-demote" data-uid="${u.id}" title="Rétrograder">Joueur</button>`}
+                        <button class="admin-btn-sm admin-btn-delete" data-uid="${u.id}" title="Supprimer">Suppr.</button>
+                    </td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+
+            // Bind actions
+            container.querySelectorAll('.admin-btn-promote').forEach(btn => {
+                btn.addEventListener('click', () => this._adminSetRole(parseInt(btn.dataset.uid), 'admin'));
+            });
+            container.querySelectorAll('.admin-btn-demote').forEach(btn => {
+                btn.addEventListener('click', () => this._adminSetRole(parseInt(btn.dataset.uid), 'user'));
+            });
+            container.querySelectorAll('.admin-btn-delete').forEach(btn => {
+                btn.addEventListener('click', () => this._adminDeleteUser(parseInt(btn.dataset.uid)));
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    _escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text || '';
+        return d.innerHTML;
+    }
+
+    async _adminSetRole(userId, role) {
+        try {
+            const res = await fetch(`/api/admin/users/${userId}/role`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role })
+            });
+            const data = await res.json();
+            if (data.error) { this._showMessage(data.error); return; }
+            this._loadAdminUsers();
+        } catch (e) { this._showMessage('Erreur'); }
+    }
+
+    async _adminDeleteUser(userId) {
+        if (!confirm('Supprimer cet utilisateur et toutes ses données ?')) return;
+        try {
+            const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.error) { this._showMessage(data.error); return; }
+            this._showMessage('Utilisateur supprimé');
+            this._loadAdminUsers();
+            if (this.community) this.community.loadPlayers();
+        } catch (e) { this._showMessage('Erreur'); }
     }
 
     async _loadClubSyncInfo() {
