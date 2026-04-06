@@ -437,7 +437,7 @@ Le numéro de version de l'application est affiché discrètement en bas à droi
 
 - Serveur Debian ou Ubuntu
 - Accès root (sudo)
-- Nom de domaine pointant vers le serveur (bridge.buscaillet.fr)
+- Nom de domaine pointant vers le serveur (game.bridge85.fr)
 - Port 80 et 443 ouverts
 
 ### 11.2 Installation
