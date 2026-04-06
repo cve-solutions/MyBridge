@@ -391,6 +391,31 @@ body {
     margin-right: 2px;
 }
 
+.analysis-bid-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin-bottom: 10px;
+}
+.analysis-bid-table th {
+    padding: 4px 8px;
+    text-align: center;
+    color: #888;
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    width: 25%;
+}
+.analysis-bid-table td {
+    padding: 4px 8px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    color: #ddd;
+}
+.analysis-bid-table .pass { color: #888; }
+.analysis-bid-table .double { color: #e74c3c; font-weight: bold; }
+.analysis-bid-table .redouble { color: #3498db; font-weight: bold; }
+.analysis-bid-table .red { color: #e74c3c; }
+
 .analysis-bid-sequence {
     display: flex;
     flex-wrap: wrap;

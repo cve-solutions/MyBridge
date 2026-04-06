@@ -1585,12 +1585,7 @@ class BridgeApp {
         // 2. Bidding sequence
         if (gs.bidding && gs.bidding.bids.length > 0) {
             html += '<div class="analysis-section"><h4>Séquence d\'enchères jouée</h4>';
-            html += '<div class="analysis-bid-sequence">';
-            for (const bid of gs.bidding.bids) {
-                const label = POSITION_FR[bid.player];
-                html += `<span class="analysis-bid"><strong>${label}:</strong> ${bid.toString()}</span>`;
-            }
-            html += '</div>';
+            html += this._biddingToTable(gs.bidding.bids, gs.dealer);
 
             if (gs.contract) {
                 const c = gs.contract;
@@ -1675,6 +1670,38 @@ class BridgeApp {
         this._openModal('analysis-modal');
     }
 
+    // Format bidding sequence as a W/N/E/S table (one row per round)
+    _biddingToTable(bids, dealer) {
+        const displayOrder = ['W', 'N', 'E', 'S'];
+        const dealerCol = displayOrder.indexOf(dealer);
+        let html = '<table class="analysis-bid-table">';
+        html += '<tr><th>O</th><th>N</th><th>E</th><th>S</th></tr>';
+
+        let col = 0;
+        let rowHtml = '';
+        // Empty cells before dealer
+        for (let i = 0; i < dealerCol; i++) {
+            rowHtml += '<td></td>';
+            col++;
+        }
+
+        for (const bid of bids) {
+            rowHtml += `<td>${bid.toDisplayHTML()}</td>`;
+            col++;
+            if (col % 4 === 0) {
+                html += `<tr>${rowHtml}</tr>`;
+                rowHtml = '';
+            }
+        }
+        // Fill remaining cells
+        if (rowHtml) {
+            while (col % 4 !== 0) { rowHtml += '<td></td>'; col++; }
+            html += `<tr>${rowHtml}</tr>`;
+        }
+        html += '</table>';
+        return html;
+    }
+
     // Simulate expert-level bidding for all 4 hands
     _generateExpertBiddingAnalysis(gs) {
         if (!gs.originalHands || !gs.dealer) return '';
@@ -1700,12 +1727,7 @@ class BridgeApp {
         }
 
         let html = '<div class="analysis-section"><h4>Séquence d\'enchères expert (' + this._conventionLabel() + ')</h4>';
-        html += '<div class="analysis-bid-sequence">';
-        for (const bid of simBidding.bids) {
-            const label = POSITION_FR[bid.player];
-            html += `<span class="analysis-bid"><strong>${label}:</strong> ${bid.toString()}</span>`;
-        }
-        html += '</div>';
+        html += this._biddingToTable(simBidding.bids, gs.dealer);
 
         if (simBidding.contract) {
             const c = simBidding.contract;
@@ -1737,11 +1759,29 @@ class BridgeApp {
         return html;
     }
 
-    // Simulate ideal play using expert AI for all 4 positions
+    // Simulate ideal play using master-level AI for all 4 positions
+    // Uses the EXPERT contract (from _generateExpertBiddingAnalysis) if available
     _generateIdealPlayAnalysis(gs) {
         if (!gs.contract || !gs.originalHands) return '';
 
-        const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+        const masterAI = new BridgeAI({ level: 'master', convention: this.settings.convention });
+
+        // Re-run expert bidding to get the expert contract
+        let expertContract = gs.contract; // fallback to actual contract
+        try {
+            const expertAI = new BridgeAI({ level: 'expert', convention: this.settings.convention });
+            const simBidding = new BiddingManager(gs.dealer);
+            let safety = 0;
+            while (!simBidding.isComplete && safety < 40) {
+                const pos = simBidding.currentBidder;
+                const hand = gs.originalHands[pos];
+                if (!hand) break;
+                const bid = expertAI.makeBid({ hands: gs.originalHands, bidding: simBidding, humanPos: '__none__' }, pos);
+                simBidding.placeBid(bid);
+                safety++;
+            }
+            if (simBidding.contract) expertContract = simBidding.contract;
+        } catch (e) { /* use actual contract */ }
 
         // Clone hands for simulation
         const simHands = {};
@@ -1749,7 +1789,7 @@ class BridgeApp {
             simHands[pos] = gs.originalHands[pos] ? [...gs.originalHands[pos]] : [];
         }
 
-        const contract = gs.contract;
+        const contract = expertContract;
         const trump = contract.suit;
         const leader = nextPos(contract.declarer);
         const simTricks = [];
@@ -1793,7 +1833,7 @@ class BridgeApp {
                     }
                 };
 
-                const card = expertAI.playCard(fakeGS, currentPlayer);
+                const card = masterAI.playCard(fakeGS, currentPlayer);
 
                 // Remove card from hand
                 const idx = simHands[currentPlayer].findIndex(cd => cd.equals(card));
@@ -1817,9 +1857,16 @@ class BridgeApp {
         const expertDiff = expertMade - required;
         const actualMade = gs.tricksWon[declarerTeam];
 
-        let html = '<div class="analysis-section"><h4>Jeu de la carte idéal (simulation expert)</h4>';
+        // Show which contract is being simulated
+        const cSuit = contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[contract.suit];
+        const isExpertContract = contract !== gs.contract;
 
-        html += `<p class="analysis-comment">Levées réalisées par l'expert: <strong>${expertMade}</strong> / ${required} requises — `;
+        let html = '<div class="analysis-section"><h4>Jeu de la carte expert (4 joueurs experts)</h4>';
+        html += `<p class="analysis-comment">Contrat simulé: <strong>${contract.level}${cSuit}</strong> par <strong>${POSITION_FR[contract.declarer]}</strong>`;
+        if (isExpertContract) html += ' <span style="color:#f1c40f">(contrat expert)</span>';
+        html += '</p>';
+
+        html += `<p class="analysis-comment">Levées réalisées: <strong>${expertMade}</strong> / ${required} requises — `;
         if (expertDiff >= 0) {
             html += `<span style="color:#2ecc71">Contrat réussi${expertDiff > 0 ? ` (+${expertDiff})` : ''}</span>`;
         } else {
