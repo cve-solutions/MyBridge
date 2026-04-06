@@ -14,10 +14,14 @@ class BridgeApp {
         this.selectedBidLevel = null;
         this.selectedBidSuit = null;
         this.aiDelay = 800;
+        this._undoSnapshot = null;
+        this._executePendingTimeout = null;
+        this.isMultiplayer = false;
 
         this._initUI();
         this._loadUserSettings();
         this.community = new CommunityManager(this);
+        this.multiplayer = new MultiplayerController(this);
     }
 
     // ==================== UI INITIALIZATION ====================
@@ -78,7 +82,7 @@ class BridgeApp {
             });
         });
 
-        // Main tabs (Paramètres / Joueurs)
+        // Main tabs (Paramètres / Joueurs / Tables)
         document.querySelectorAll('.main-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
@@ -90,8 +94,39 @@ class BridgeApp {
                     this.community.loadPlayers();
                     this.community.loadRankings();
                 }
+                // Load table list when switching to Tables tab
+                if (tab.dataset.mainTab === 'tables-panel' && this.multiplayer) {
+                    this.multiplayer.loadTableList();
+                }
             });
         });
+
+        // Tables tab buttons
+        const mpCreateBtn = document.getElementById('mp-create-btn');
+        if (mpCreateBtn) {
+            mpCreateBtn.addEventListener('click', () => {
+                const convention = document.getElementById('mp-convention').value;
+                const scoring = document.getElementById('mp-scoring').value;
+                this.multiplayer.createTable({ convention, scoring });
+            });
+        }
+
+        const mpJoinBtn = document.getElementById('mp-join-btn');
+        if (mpJoinBtn) {
+            mpJoinBtn.addEventListener('click', () => {
+                const code = document.getElementById('mp-join-code').value.trim().toUpperCase();
+                const position = document.getElementById('mp-join-pos').value;
+                if (!code) { this._showMessage('Entrez un code de table.'); return; }
+                this.multiplayer.joinTable(code, position);
+            });
+        }
+
+        const mpRefreshBtn = document.getElementById('mp-refresh-btn');
+        if (mpRefreshBtn) {
+            mpRefreshBtn.addEventListener('click', () => {
+                if (this.multiplayer) this.multiplayer.loadTableList();
+            });
+        }
 
         // Start game (both buttons)
         document.getElementById('start-game-btn').addEventListener('click', () => this._startGame());
@@ -142,6 +177,27 @@ class BridgeApp {
             e.stopPropagation();
             this._closeModal('analysis-modal');
         });
+        document.getElementById('tricks-modal-close').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._closeModal('tricks-modal');
+        });
+        document.getElementById('bidding-history-modal-close').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._closeModal('bidding-history-modal');
+        });
+        document.getElementById('claim-cancel-btn').addEventListener('click', () => {
+            this._closeModal('claim-modal');
+        });
+        document.getElementById('claim-confirm-btn').addEventListener('click', () => {
+            this._closeModal('claim-modal');
+            this._executeClaim();
+        });
+
+        // Game action buttons
+        document.getElementById('show-tricks-btn').addEventListener('click', () => this._showPreviousTricks());
+        document.getElementById('show-bidding-btn').addEventListener('click', () => this._showBiddingHistoryModal());
+        document.getElementById('undo-btn').addEventListener('click', () => this._undoLastCard());
+        document.getElementById('claim-btn').addEventListener('click', () => this._promptClaim());
 
         // Close modals on overlay click
         document.querySelectorAll('.modal-overlay').forEach(modal => {
@@ -161,6 +217,7 @@ class BridgeApp {
     // ==================== GAME FLOW ====================
 
     _startGame() {
+        this.isMultiplayer = false;
         this._saveUserSettings();
         this.gameState = new GameState(this.settings);
         this.ai = new BridgeAI(this.settings);
@@ -241,6 +298,13 @@ class BridgeApp {
     }
 
     _startDeal() {
+        // Reset undo state
+        this._undoSnapshot = null;
+        if (this._executePendingTimeout) {
+            clearTimeout(this._executePendingTimeout);
+            this._executePendingTimeout = null;
+        }
+
         this.gameState.startDeal();
         this._updateInfoBar();
         this._updateBiddingHeader();
@@ -253,6 +317,10 @@ class BridgeApp {
     }
 
     _nextDeal() {
+        if (this.isMultiplayer) {
+            this.multiplayer.sendNextDeal();
+            return;
+        }
         this.gameState.dealNumber++;
         this._showScreen('game-screen');
         this._startDeal();
@@ -304,7 +372,6 @@ class BridgeApp {
 
     _renderHand(pos) {
         const gs = this.gameState;
-        const container = document.getElementById(`cards-${pos.toLowerCase() === 'n' ? 'north' : pos.toLowerCase() === 'e' ? 'east' : pos.toLowerCase() === 's' ? 'south' : 'west'}`);
         const posName = pos === 'N' ? 'north' : pos === 'E' ? 'east' : pos === 'S' ? 'south' : 'west';
         const containerEl = document.getElementById(`cards-${posName}`);
         containerEl.innerHTML = '';
@@ -312,11 +379,50 @@ class BridgeApp {
         const hand = gs.hands[pos];
         const showCards = gs.shouldShowCards(pos);
         const isPlayPhase = gs.phase === 'playing';
+        const isDummy = isPlayPhase && pos === gs.dummyPos;
         const isHumanTurn = isPlayPhase && gs.currentTrick &&
             gs.currentTrick.currentPlayer === pos &&
             gs.isHumanControlled(pos);
 
         const playableCards = isHumanTurn ? gs.getPlayableCards(pos) : [];
+
+        // Dummy hand: render grouped by suit
+        if (isDummy && showCards) {
+            containerEl.classList.add('dummy-hand');
+            for (const suit of ['S', 'H', 'D', 'C']) {
+                const suitCards = hand.filter(c => c.suit === suit).sort((a, b) => b.value - a.value);
+                const isRed = suit === 'H' || suit === 'D';
+                const suitRow = document.createElement('div');
+                suitRow.className = 'dummy-suit-row';
+                const suitLabel = document.createElement('span');
+                suitLabel.className = `dummy-suit-label${isRed ? ' red' : ''}`;
+                suitLabel.textContent = SUIT_SYMBOLS[suit];
+                suitRow.appendChild(suitLabel);
+
+                if (suitCards.length === 0) {
+                    const voidEl = document.createElement('span');
+                    voidEl.className = 'dummy-void';
+                    voidEl.textContent = '—';
+                    suitRow.appendChild(voidEl);
+                } else {
+                    for (const card of suitCards) {
+                        const cardEl = document.createElement('div');
+                        cardEl.className = 'card';
+                        if (isRed) cardEl.classList.add('red-card');
+                        cardEl.innerHTML = this._cardHTML(card);
+                        if (isHumanTurn && playableCards.some(c => c.equals(card))) {
+                            cardEl.classList.add('playable');
+                            cardEl.addEventListener('click', () => this._humanPlayCard(pos, card));
+                        }
+                        suitRow.appendChild(cardEl);
+                    }
+                }
+                containerEl.appendChild(suitRow);
+            }
+            return;
+        }
+
+        containerEl.classList.remove('dummy-hand');
 
         for (const card of hand) {
             const cardEl = document.createElement('div');
@@ -415,10 +521,18 @@ class BridgeApp {
         document.getElementById('trick-area').classList.add('hidden');
         this._resetBidSelection();
         this._updateBiddingControls();
+        // Hide play-phase buttons
+        document.getElementById('show-tricks-btn').classList.add('hidden');
+        document.getElementById('show-bidding-btn').classList.add('hidden');
+        document.getElementById('undo-btn').classList.add('hidden');
+        document.getElementById('claim-btn').classList.add('hidden');
     }
 
     _hideBiddingPanel() {
         document.getElementById('bidding-panel').classList.add('hidden');
+        // Show play-phase buttons
+        document.getElementById('show-bidding-btn').classList.remove('hidden');
+        document.getElementById('show-tricks-btn').classList.remove('hidden');
     }
 
     _updateBiddingHeader() {
@@ -559,6 +673,27 @@ class BridgeApp {
             return;
         }
 
+        // Check if alert is needed for this bid
+        const detectedAlert = shouldAlert(bid, gs.bidding, this.settings.convention);
+
+        // In multiplayer mode, send to server instead of local processing
+        if (this.isMultiplayer) {
+            this._resetBidSelection();
+            if (detectedAlert) {
+                this._promptAlert(bid, detectedAlert, (alertText) => {
+                    bid.alertText = alertText;
+                    this.multiplayer.sendBid(bid);
+                });
+                return;
+            }
+            this.multiplayer.sendBid(bid);
+            return;
+        }
+
+        if (detectedAlert) {
+            bid.alertText = detectedAlert; // Auto-set in solo mode
+        }
+
         gs.bidding.placeBid(bid);
         this._resetBidSelection();
         this._updateBiddingHistory();
@@ -682,9 +817,12 @@ class BridgeApp {
         if (gs.isHumanControlled(currentPlayer)) {
             // Human's turn - render hand with clickable cards
             this._renderAllHands();
+            this._updateClaimBtn();
             return;
         }
 
+        // AI's turn - hide claim button
+        document.getElementById('claim-btn').classList.add('hidden');
         // AI's turn - play immediately (delay between cards is handled in _executePlay)
         this._renderAllHands();
         const card = this.ai.playCard(gs, currentPlayer);
@@ -703,10 +841,21 @@ class BridgeApp {
             return;
         }
 
-        this._executePlay(pos, card);
+        // In multiplayer mode, send to server
+        if (this.isMultiplayer) {
+            this.multiplayer.sendPlay(card);
+            return;
+        }
+
+        // Save snapshot for undo before human plays
+        this._undoSnapshot = gs.snapshot();
+        this._hideUndoBtn(); // hide until we decide whether to show
+        this._executePendingTimeout = null;
+
+        this._executePlay(pos, card, true);
     }
 
-    _executePlay(pos, card) {
+    _executePlay(pos, card, isHumanCard = false) {
         const gs = this.gameState;
 
         // Display card in trick area
@@ -721,8 +870,12 @@ class BridgeApp {
         if (result.trickWinner) {
             // Trick complete - pause so player can see all 4 cards
             this._updateInfoBar();
+            // After trick completes, undo is no longer possible
+            this._undoSnapshot = null;
+            this._hideUndoBtn();
 
-            setTimeout(() => {
+            this._executePendingTimeout = setTimeout(() => {
+                this._executePendingTimeout = null;
                 this._clearTrickDisplay();
 
                 if (result.complete) {
@@ -737,15 +890,116 @@ class BridgeApp {
             // Next player in same trick - add delay so each card is visible
             const nextPlayer = gs.currentTrick.currentPlayer;
             if (nextPlayer && !gs.isHumanControlled(nextPlayer)) {
+                // After human played, show undo button briefly before AI plays
+                if (isHumanCard) {
+                    this._showUndoBtn();
+                }
                 // AI plays next: wait before playing so current card is visible
-                setTimeout(() => {
+                this._executePendingTimeout = setTimeout(() => {
+                    this._executePendingTimeout = null;
+                    this._hideUndoBtn();
+                    this._undoSnapshot = null;
                     this._processPlay();
                 }, this.aiDelay);
             } else {
-                // Human plays next: render immediately with clickable cards
+                // Human plays next: show claim if applicable, render immediately
+                this._undoSnapshot = null;
+                this._hideUndoBtn();
+                this._updateClaimBtn();
                 this._processPlay();
             }
         }
+    }
+
+    _showUndoBtn() {
+        document.getElementById('undo-btn').classList.remove('hidden');
+    }
+
+    _hideUndoBtn() {
+        document.getElementById('undo-btn').classList.add('hidden');
+    }
+
+    _updateClaimBtn() {
+        const gs = this.gameState;
+        if (!gs || gs.phase !== 'playing') {
+            document.getElementById('claim-btn').classList.add('hidden');
+            return;
+        }
+        // Only show claim when it's the human's turn as declarer
+        const isDeclarer = gs.humanPos === gs.declarerPos;
+        const isDummyController = gs.humanPos === gs.declarerPos;
+        const currentPlayer = gs.currentTrick ? gs.currentTrick.currentPlayer : null;
+        const isHumanTurn = currentPlayer && gs.isHumanControlled(currentPlayer);
+        if (isHumanTurn && isDeclarer && gs.tricks.length > 0) {
+            document.getElementById('claim-btn').classList.remove('hidden');
+        } else {
+            document.getElementById('claim-btn').classList.add('hidden');
+        }
+    }
+
+    _undoLastCard() {
+        if (!this._undoSnapshot) return;
+
+        // Cancel pending AI timeout
+        if (this._executePendingTimeout) {
+            clearTimeout(this._executePendingTimeout);
+            this._executePendingTimeout = null;
+        }
+
+        this.gameState.restoreSnapshot(this._undoSnapshot);
+        this._undoSnapshot = null;
+        this._hideUndoBtn();
+
+        // Clear trick display and re-render
+        this._clearTrickDisplay();
+        // Re-display cards that are already in the current trick
+        const gs = this.gameState;
+        if (gs.currentTrick) {
+            for (const p of gs.currentTrick.order) {
+                this._displayTrickCard(p, gs.currentTrick.cards[p]);
+            }
+        }
+        this._renderAllHands();
+        this._updateInfoBar();
+        this._processPlay();
+    }
+
+    _promptClaim() {
+        const gs = this.gameState;
+        if (!gs || gs.phase !== 'playing') return;
+        const remaining = 13 - gs.tricks.length;
+        const declarerTeam = teamOf(gs.declarerPos);
+        const current = gs.tricksWon[declarerTeam];
+        const required = gs.contract.level + 6;
+        const needed = Math.max(0, required - current);
+
+        document.getElementById('claim-modal-text').innerHTML =
+            `Vous revendiquez <strong>${remaining} levée${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}</strong>.<br>` +
+            `Levées acquises: <strong>${current}</strong> — Requises: <strong>${required}</strong><br>` +
+            (remaining >= needed
+                ? `<span style="color:#2ecc71">Le contrat sera réussi.</span>`
+                : `<span style="color:#e74c3c">Le contrat sera chuté (manque ${needed - remaining} levée${needed - remaining > 1 ? 's' : ''}).</span>`);
+        this._openModal('claim-modal');
+    }
+
+    _executeClaim() {
+        const gs = this.gameState;
+        if (!gs || gs.phase !== 'playing') return;
+
+        if (this.isMultiplayer) {
+            this.multiplayer.sendClaim();
+            return;
+        }
+
+        const declarerTeam = teamOf(gs.declarerPos);
+        const remaining = 13 - gs.tricks.length;
+        // Award all remaining tricks to the declaring team
+        gs.tricksWon[declarerTeam] += remaining;
+        gs.phase = 'scoring';
+        this._hideUndoBtn();
+        document.getElementById('claim-btn').classList.add('hidden');
+        this._clearTrickDisplay();
+        this._showScoreScreen();
     }
 
     // ==================== SCORING ====================
@@ -919,6 +1173,197 @@ class BridgeApp {
         const el = document.getElementById(id);
         el.style.display = 'none';
         el.classList.add('hidden');
+    }
+
+    // ==================== PREVIOUS TRICKS MODAL ====================
+
+    _showPreviousTricks() {
+        const gs = this.gameState;
+        if (!gs || gs.tricks.length === 0) {
+            this._showMessage('Aucune levée terminée pour le moment.');
+            return;
+        }
+
+        const humanTeam = teamOf(gs.humanPos);
+        let html = `<table class="tricks-table">
+            <tr>
+                <th>#</th>
+                <th>Ouest</th><th>Nord</th><th>Est</th><th>Sud</th>
+                <th>Gagnant</th>
+            </tr>`;
+
+        for (let i = 0; i < gs.tricks.length; i++) {
+            const trick = gs.tricks[i];
+            const winner = trick.getWinner();
+            const winTeam = teamOf(winner);
+            const isOurTrick = winTeam === humanTeam;
+            html += '<tr>';
+            html += `<td><strong>${i + 1}</strong></td>`;
+            for (const p of ['W', 'N', 'E', 'S']) {
+                const card = trick.cards[p];
+                if (card) {
+                    const colorClass = card.isRed ? 'card-red' : 'card-black';
+                    const boldClass = p === winner ? 'won-by-winner' : '';
+                    html += `<td class="${colorClass} ${boldClass}">${card.toString()}</td>`;
+                } else {
+                    html += '<td>-</td>';
+                }
+            }
+            const winnerClass = isOurTrick ? 'winner-ns' : 'winner-ew';
+            html += `<td class="${winnerClass}">${POSITION_FR[winner]}</td>`;
+            html += '</tr>';
+        }
+
+        html += '</table>';
+        html += `<p style="margin-top:10px; font-size:0.85em; color:#888">
+            NS: <strong>${gs.tricksWon.NS}</strong> levée${gs.tricksWon.NS > 1 ? 's' : ''} &nbsp;|&nbsp;
+            EO: <strong>${gs.tricksWon.EW}</strong> levée${gs.tricksWon.EW > 1 ? 's' : ''}
+        </p>`;
+
+        document.getElementById('tricks-modal-body').innerHTML = html;
+        this._openModal('tricks-modal');
+    }
+
+    // ==================== BIDDING HISTORY MODAL (during play) ====================
+
+    _showBiddingHistoryModal() {
+        const gs = this.gameState;
+        if (!gs || !gs.bidding) return;
+
+        const allBids = gs.bidding.bids;
+        const displayOrder = ['W', 'N', 'E', 'S'];
+        const dealerCol = displayOrder.indexOf(gs.dealer);
+
+        let html = '<div class="bid-header"><span>Ouest</span><span>Nord</span><span>Est</span><span>Sud</span></div>';
+
+        let col = dealerCol;
+        let rowHtml = '';
+        let cells = 0;
+
+        // Empty cells before dealer
+        for (let i = 0; i < dealerCol; i++) {
+            rowHtml += '<span class="bid-cell">-</span>';
+            cells++;
+        }
+
+        for (const bid of allBids) {
+            rowHtml += `<span class="bid-cell">${bid.toDisplayHTML()}</span>`;
+            cells++;
+            col = (col + 1) % 4;
+            if (col === 0) {
+                html += `<div class="bid-row">${rowHtml}</div>`;
+                rowHtml = '';
+                cells = 0;
+            }
+        }
+
+        // Fill remaining cells in last row
+        if (cells > 0) {
+            while (cells % 4 !== 0) {
+                rowHtml += '<span class="bid-cell"></span>';
+                cells++;
+            }
+            html += `<div class="bid-row">${rowHtml}</div>`;
+        }
+
+        // Final contract
+        if (gs.contract) {
+            const c = gs.contract;
+            const suitStr = c.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[c.suit];
+            html += `<div class="final-contract-line">
+                Contrat: <strong>${c.level}${suitStr}</strong> par <strong>${POSITION_FR[c.declarer]}</strong>
+                ${c.doubled ? ' contré' : ''}${c.redoubled ? ' surcontré' : ''}
+                — Mort: <strong>${POSITION_FR[c.dummy]}</strong>
+            </div>`;
+        }
+
+        document.getElementById('bidding-history-modal-body').innerHTML = html;
+        this._openModal('bidding-history-modal');
+    }
+
+    // ==================== ALERT SYSTEM ====================
+
+    _promptAlert(bid, detectedText, callback) {
+        // In solo mode or for auto-detected alerts, just use the detected text
+        // In multiplayer, we'd show a prompt - for now auto-fill
+        callback(detectedText);
+    }
+
+    // ==================== CONVENTION CARD ====================
+
+    _showConventionInfo(convention) {
+        const info = this._getConventionInfo(convention);
+        document.getElementById('convention-modal-title').textContent = info.name;
+        document.getElementById('convention-modal-body').innerHTML = info.body;
+        this._openModal('convention-modal');
+    }
+
+    _getConventionInfo(conv) {
+        const infos = {
+            sef: {
+                name: 'SEF — Standard Français',
+                body: `<p>Le Standard Français (SEF) est la base des conventions en bridge français.</p>
+                    <ul>
+                        <li><strong>Ouvertures 5e majeure</strong> : 1♥ et 1♠ promettent 5+ cartes</li>
+                        <li><strong>1SA</strong> : 15-17 HCP, main équilibrée</li>
+                        <li><strong>2♣</strong> : artificiel, 20+ HCP ou main de jeu</li>
+                        <li><strong>2♦/♥/♠</strong> : enchères faibles (6-10 HCP, 6 cartes)</li>
+                        <li><strong>Stayman (2♣/1SA)</strong> : demande majeure 4e du partenaire</li>
+                        <li><strong>Transferts Jacoby</strong> : 2♦ → ♥, 2♥ → ♠ sur 1SA</li>
+                        <li><strong>Blackwood 4SA</strong> : demande les as</li>
+                    </ul>`
+            },
+            sayc: {
+                name: 'SAYC — Standard American Yellow Card',
+                body: `<p>Convention américaine standard, la plus répandue aux États-Unis.</p>
+                    <ul>
+                        <li><strong>5e majeure</strong> : 1♥/1♠ promettent 5+ cartes</li>
+                        <li><strong>1SA</strong> : 15-17 HCP</li>
+                        <li><strong>2♣</strong> : artificiel fort (22+ HCP ou main de jeu)</li>
+                        <li><strong>2♦/♥/♠</strong> : enchères faibles, 6+ cartes, 5-10 HCP</li>
+                        <li><strong>Transferts Jacoby</strong> sur 1SA</li>
+                        <li><strong>Stayman</strong> sur 1SA et 2SA</li>
+                        <li><strong>Blackwood, Gerber</strong> pour les as</li>
+                    </ul>`
+            },
+            '2over1': {
+                name: '2/1 Game Forcing',
+                body: `<p>Variante du SAYC très populaire en compétition.</p>
+                    <ul>
+                        <li><strong>2 sur 1 non forcé</strong> : engagement de manche (12+ HCP)</li>
+                        <li><strong>1SA forcing</strong> sur 1♥/1♠ (10-12 HCP)</li>
+                        <li><strong>Bergen Raises</strong> : soutiens directs au palier 3</li>
+                        <li><strong>Drury (2♣)</strong> : redemande après 1♥/1♠ en 3e/4e main</li>
+                        <li><strong>Jacoby 2SA</strong> : soutien forcing de manche en majeure</li>
+                    </ul>`
+            },
+            acol: {
+                name: 'Acol',
+                body: `<p>Système britannique, le plus joué au Royaume-Uni.</p>
+                    <ul>
+                        <li><strong>4e majeure</strong> : 1♥/1♠ peuvent avoir 4 cartes</li>
+                        <li><strong>1SA</strong> : 12-14 HCP équilibrée</li>
+                        <li><strong>2♣</strong> : artificiel, main très forte</li>
+                        <li><strong>2♦/♥/♠</strong> : mains de jeu, 8+ de levées</li>
+                        <li><strong>Pas de transferts</strong> sur 1SA (Stayman simple)</li>
+                        <li><strong>Blackwood</strong> pour les as</li>
+                        <li><strong>Benjaminisés</strong> : variante courante</li>
+                    </ul>`
+            },
+            standard: {
+                name: 'Standard American',
+                body: `<p>Base du bridge américain, ancêtre du SAYC.</p>
+                    <ul>
+                        <li><strong>5e majeure</strong> : 1♥/1♠ = 5+ cartes</li>
+                        <li><strong>1SA</strong> : 16-18 HCP</li>
+                        <li><strong>2♣</strong> : main forte (23+ ou main de jeu)</li>
+                        <li><strong>2♦/♥/♠</strong> : enchères intermédiaires</li>
+                        <li><strong>Stayman</strong> sur 1SA</li>
+                        <li><strong>Blackwood</strong> : 4SA pour les as</li>
+                    </ul>`
+            }
+        };
+        return infos[conv] || { name: conv, body: '<p>Information non disponible.</p>' };
     }
 
     // ==================== DEAL ANALYSIS ====================
@@ -1448,16 +1893,6 @@ class BridgeApp {
         }
         html += '</div>';
         return html;
-    }
-
-    // ==================== CONVENTION INFO ====================
-
-    _showConventionInfo(convention) {
-        const info = this._conventionDescriptions[convention];
-        if (!info) return;
-        document.getElementById('convention-modal-title').textContent = info.title;
-        document.getElementById('convention-modal-body').innerHTML = info.html;
-        this._openModal('convention-modal');
     }
 
     get _conventionDescriptions() {

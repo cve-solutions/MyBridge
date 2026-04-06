@@ -24,6 +24,7 @@ const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const { WebSocketServer } = require('ws');
 const db = require('./db');
+const gm = require('./gameManager');
 
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -370,6 +371,117 @@ app.get('/api/chat-unread', apiLimiter, requireAuth, (req, res) => {
     res.json(unread);
 });
 
+// ==================== MULTIPLAYER ROUTES ====================
+
+// List active tables
+app.get('/api/tables', apiLimiter, requireAuth, (req, res) => {
+    res.json(gm.getTableList());
+});
+
+// Create a new table
+app.post('/api/tables', apiLimiter, requireAuth, (req, res) => {
+    const { convention, scoring } = req.body;
+    const result = gm.createTable(req.session.userId, req.session.username, { convention, scoring });
+    if (result.error) return res.status(400).json(result);
+    gm.broadcastTableList();
+    res.json(result);
+});
+
+// Join a table by code
+app.post('/api/tables/join', apiLimiter, requireAuth, (req, res) => {
+    const { code, position } = req.body;
+    if (!code || !position) return res.status(400).json({ error: 'Code et position requis.' });
+    const result = gm.joinTable(req.session.userId, req.session.username, code, position);
+    if (result.error) return res.status(400).json(result);
+    gm.broadcastTableList();
+    res.json(result);
+});
+
+// Join as observer
+app.post('/api/tables/:id/observe', apiLimiter, requireAuth, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    if (isNaN(tableId)) return res.status(400).json({ error: 'ID invalide.' });
+    const result = gm.joinAsObserver(req.session.userId, tableId);
+    if (result.error) return res.status(400).json(result);
+    res.json(result);
+});
+
+// Leave a table
+app.post('/api/tables/:id/leave', apiLimiter, requireAuth, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    gm.leaveTable(req.session.userId, tableId);
+    gm.broadcastTableList();
+    res.json({ success: true });
+});
+
+// Start the game at a table
+app.post('/api/tables/:id/start', apiLimiter, requireAuth, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    if (isNaN(tableId)) return res.status(400).json({ error: 'ID invalide.' });
+    const result = gm.startGame(req.session.userId, tableId);
+    if (result.error) return res.status(400).json(result);
+    gm.broadcastTableList();
+    res.json(result);
+});
+
+// Get table state
+app.get('/api/tables/:id', apiLimiter, requireAuth, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    const table = gm.getTable(tableId);
+    if (!table) return res.status(404).json({ error: 'Table introuvable.' });
+    res.json(table.serializeForClient(req.session.userId));
+});
+
+// Send invitation
+app.post('/api/tables/:id/invite', apiLimiter, requireAuth, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    const { toUserId, position } = req.body;
+    if (!toUserId) return res.status(400).json({ error: 'Joueur cible requis.' });
+
+    const table = gm.getTable(tableId);
+    if (!table) return res.status(404).json({ error: 'Table introuvable.' });
+    if (table.getUserPosition(req.session.userId) === null && table.createdBy !== req.session.userId) {
+        return res.status(403).json({ error: 'Vous ne pouvez inviter que depuis votre table.' });
+    }
+
+    const invitationId = db.createInvitation(tableId, req.session.userId, toUserId, position || null);
+
+    // Real-time notification
+    const fromUser = db.getAllPlayers().find(p => p.id === req.session.userId);
+    gm.sendToUser(toUserId, {
+        type: 'table_invitation',
+        invitationId,
+        fromUser: { id: req.session.userId, name: fromUser ? fromUser.display_name : 'Inconnu' },
+        tableId,
+        tableCode: table.code,
+        position: position || null
+    });
+
+    res.json({ success: true, invitationId });
+});
+
+// Respond to invitation
+app.post('/api/invitations/:id/respond', apiLimiter, requireAuth, (req, res) => {
+    const invId = parseInt(req.params.id);
+    const { accept } = req.body;
+    const inv = db.respondToInvitation(invId, req.session.userId, !!accept);
+    if (!inv) return res.status(404).json({ error: 'Invitation introuvable.' });
+
+    if (accept && inv.position) {
+        const result = gm.joinTable(req.session.userId, req.session.username, '', inv.position, inv.table_id);
+        // Fallback: join by table ID directly
+        const table = gm.getTable(inv.table_id);
+        if (table && table.seats[inv.position] === null) {
+            table.seats[inv.position] = req.session.userId;
+            table.seatNames[inv.position] = req.session.username;
+            db.prepare('INSERT OR REPLACE INTO table_seats (table_id, position, user_id) VALUES (?, ?, ?)').run(inv.table_id, inv.position, req.session.userId);
+            gm.broadcastTableList();
+        }
+        return res.json({ success: true, tableId: inv.table_id });
+    }
+    res.json({ success: true });
+});
+
 // ==================== WEBSOCKET ====================
 
 // Track online users and their WebSocket connections
@@ -396,6 +508,9 @@ const server = app.listen(PORT, '127.0.0.1', () => {
 
 // WebSocket server shares the HTTP server
 const wss = new WebSocketServer({ server });
+
+// Initialize game manager with DB and wsClients (injected after wss setup)
+// gm.init() is called after wsClients is populated (see below)
 
 // Parse session from WebSocket upgrade request
 wss.on('connection', (ws, req) => {
@@ -453,6 +568,32 @@ wss.on('connection', (ws, req) => {
                     broadcastOnlineStatus();
                 } else if (msg.type === 'ping') {
                     ws.send(JSON.stringify({ type: 'pong' }));
+
+                // ---- Multiplayer game actions ----
+                } else if (msg.type === 'table_bid') {
+                    const result = gm.processHumanBid(userId, msg.tableId, msg.bid);
+                    if (result.error) ws.send(JSON.stringify({ type: 'table_error', error: result.error }));
+
+                } else if (msg.type === 'table_play') {
+                    const result = gm.processHumanPlay(userId, msg.tableId, msg.card);
+                    if (result.error) ws.send(JSON.stringify({ type: 'table_error', error: result.error }));
+
+                } else if (msg.type === 'table_claim') {
+                    const result = gm.processHumanClaim(userId, msg.tableId);
+                    if (result.error) ws.send(JSON.stringify({ type: 'table_error', error: result.error }));
+
+                } else if (msg.type === 'table_next_deal') {
+                    gm.startNextDeal(userId, msg.tableId);
+
+                } else if (msg.type === 'table_get_state') {
+                    const table = gm.getTable(msg.tableId);
+                    if (table) {
+                        ws.send(JSON.stringify({
+                            type: 'table_game_state',
+                            tableId: msg.tableId,
+                            state: table.serializeForClient(userId)
+                        }));
+                    }
                 }
             } catch (e) { /* ignore invalid messages */ }
         });
@@ -462,9 +603,14 @@ wss.on('connection', (ws, req) => {
             onlineUsers.delete(userId);
             inGameUsers.delete(userId);
             broadcastOnlineStatus();
+            // Notify game manager of disconnection (seat becomes AI temporarily)
+            // Tables will keep running with AI for that seat
         });
     });
 });
+
+// Initialize game manager now that wsClients map exists
+gm.init(db, wsClients);
 
 // Graceful shutdown
 function shutdown() {

@@ -115,6 +115,17 @@ class CommunityManager {
                 this.unreadCounts[chatMsg.from_user_id] = (this.unreadCounts[chatMsg.from_user_id] || 0) + 1;
                 this._updatePlayerListUnread();
             }
+        } else if (msg.type && msg.type.startsWith('table_')) {
+            // Route multiplayer messages to the multiplayer controller
+            if (this.app && this.app.multiplayer) {
+                this.app.multiplayer.handleMessage(msg);
+            }
+        }
+    }
+
+    sendWs(message) {
+        if (this.ws && this.ws.readyState === 1) {
+            this.ws.send(JSON.stringify(message));
         }
     }
 

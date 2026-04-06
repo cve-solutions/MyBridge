@@ -89,6 +89,48 @@ function init() {
             ffb_license TEXT DEFAULT '',
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS multiplayer_tables (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'waiting',
+            created_by INTEGER REFERENCES users(id),
+            settings_json TEXT DEFAULT '{}',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            ended_at DATETIME
+        );
+
+        CREATE TABLE IF NOT EXISTS table_seats (
+            table_id INTEGER REFERENCES multiplayer_tables(id) ON DELETE CASCADE,
+            position TEXT NOT NULL,
+            user_id INTEGER REFERENCES users(id),
+            joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (table_id, position)
+        );
+
+        CREATE TABLE IF NOT EXISTS table_invitations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            table_id INTEGER REFERENCES multiplayer_tables(id) ON DELETE CASCADE,
+            from_user_id INTEGER REFERENCES users(id),
+            to_user_id INTEGER REFERENCES users(id),
+            position TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS multiplayer_games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            table_id INTEGER REFERENCES multiplayer_tables(id) ON DELETE CASCADE,
+            deal_number INTEGER,
+            deal_json TEXT,
+            contract_json TEXT,
+            score_ns INTEGER,
+            score_ew INTEGER,
+            completed_at DATETIME
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mp_games_table ON multiplayer_games(table_id);
     `);
 
     // Migration: add trick_delay column if missing (existing installs)
@@ -395,6 +437,30 @@ function getGameSummary(userId) {
     };
 }
 
+// ==================== MULTIPLAYER INVITATIONS ====================
+
+function createInvitation(tableId, fromUserId, toUserId, position) {
+    // Cancel any previous pending invitation from same person to same table+target
+    db.prepare(`
+        UPDATE table_invitations SET status = 'cancelled'
+        WHERE table_id = ? AND from_user_id = ? AND to_user_id = ? AND status = 'pending'
+    `).run(tableId, fromUserId, toUserId);
+
+    const result = db.prepare(`
+        INSERT INTO table_invitations (table_id, from_user_id, to_user_id, position)
+        VALUES (?, ?, ?, ?)
+    `).run(tableId, fromUserId, toUserId, position);
+
+    return result.lastInsertRowid;
+}
+
+function respondToInvitation(invitationId, toUserId, accept) {
+    const inv = db.prepare('SELECT * FROM table_invitations WHERE id = ? AND to_user_id = ? AND status = ?').get(invitationId, toUserId, 'pending');
+    if (!inv) return null;
+    db.prepare('UPDATE table_invitations SET status = ? WHERE id = ?').run(accept ? 'accepted' : 'declined', invitationId);
+    return inv;
+}
+
 function close() {
     if (db) db.close();
 }
@@ -405,5 +471,6 @@ module.exports = {
     getAllPlayers, sendMessage, getConversation, markMessagesRead, getUnreadCounts,
     updateRating, getPlayerRating, getRankings, getRankTitle,
     getPlayerProfile, savePlayerProfile, getGameHistory, getGameSummary,
+    createInvitation, respondToInvitation,
     close
 };
