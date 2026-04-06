@@ -142,11 +142,11 @@ class BridgeApp {
             this._showScreen('settings-screen');
         });
 
-        // Logout button
+        // Logout buttons (game screen + settings screen)
         const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', () => this._logout());
-        }
+        if (logoutBtn) logoutBtn.addEventListener('click', () => this._logout());
+        const settingsLogoutBtn = document.getElementById('settings-logout-btn');
+        if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', () => this._logout());
 
         // Bidding controls
         document.querySelectorAll('.bid-level-btn').forEach(el => {
