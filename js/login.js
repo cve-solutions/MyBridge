@@ -67,12 +67,18 @@ async function handleRegister(e) {
     e.preventDefault();
     var username = document.getElementById('reg-username').value.trim();
     var displayName = document.getElementById('reg-display').value.trim();
+    var email = document.getElementById('reg-email').value.trim();
     var password = document.getElementById('reg-password').value;
     var password2 = document.getElementById('reg-password2').value;
     var btn = document.getElementById('register-btn');
 
     if (password !== password2) {
         showError('Les mots de passe ne correspondent pas.');
+        return;
+    }
+
+    if (displayName && displayName.length < 2) {
+        showError('Le nom d\'affichage doit faire au moins 2 caractères.');
         return;
     }
 
@@ -83,7 +89,7 @@ async function handleRegister(e) {
         var res = await fetch('/api/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username, password: password, displayName: displayName })
+            body: JSON.stringify({ username: username, password: password, displayName: displayName, email: email })
         });
 
         var data = await res.json();

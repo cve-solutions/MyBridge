@@ -192,7 +192,7 @@ app.get('/', (req, res) => {
 // ==================== AUTH ROUTES ====================
 
 app.post('/api/register', authLimiter, (req, res) => {
-    const { username, password, displayName } = req.body;
+    const { username, password, displayName, email } = req.body;
 
     if (!username || !password) {
         return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe requis.' });
@@ -210,14 +210,31 @@ app.post('/api/register', authLimiter, (req, res) => {
         return res.status(400).json({ error: 'Le mot de passe doit faire au moins 6 caractères.' });
     }
 
+    // Validate email format if provided
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Format d\'email invalide.' });
+    }
+
+    // Check uniqueness before insert (clear error messages)
+    if (db.isUsernameTaken(username)) {
+        return res.status(409).json({ error: 'Ce nom d\'utilisateur est déjà pris.' });
+    }
+    if (email && db.isEmailTaken(email)) {
+        return res.status(409).json({ error: 'Cet email est déjà utilisé par un autre compte.' });
+    }
+    const finalDisplayName = displayName || username;
+    if (db.isDisplayNameTaken(finalDisplayName)) {
+        return res.status(409).json({ error: 'Ce nom d\'affichage est déjà utilisé par un autre joueur.' });
+    }
+
     try {
-        const userId = db.createUser(username, password, displayName || username);
+        const userId = db.createUser(username, password, finalDisplayName, email);
         req.session.userId = userId;
         req.session.username = username;
-        res.json({ success: true, user: { id: userId, username, displayName: displayName || username } });
+        res.json({ success: true, user: { id: userId, username, displayName: finalDisplayName } });
     } catch (err) {
         if (err.message.includes('UNIQUE')) {
-            return res.status(409).json({ error: 'Ce nom d\'utilisateur est déjà pris.' });
+            return res.status(409).json({ error: 'Ce nom d\'utilisateur ou email est déjà pris.' });
         }
         console.error('Register error:', err);
         res.status(500).json({ error: 'Erreur serveur.' });
@@ -522,6 +539,143 @@ app.get('/api/clubs/search', apiLimiter, requireAuth, (req, res) => {
 });
 
 // Club sync info
+// ==================== OLLAMA / LLM ====================
+
+// Get Ollama config (any user can check if enabled)
+app.get('/api/llm/status', apiLimiter, requireAuth, (req, res) => {
+    const config = db.getOllamaConfig();
+    res.json({ enabled: config.enabled, model: config.model });
+});
+
+// Admin: get full config
+app.get('/api/admin/ollama', apiLimiter, requireAdmin, (req, res) => {
+    res.json(db.getOllamaConfig());
+});
+
+// Admin: save config
+app.put('/api/admin/ollama', apiLimiter, requireAdmin, (req, res) => {
+    db.setOllamaConfig(req.body);
+    res.json({ success: true });
+});
+
+// Admin: test connection + list models
+app.post('/api/admin/ollama/test', apiLimiter, requireAdmin, async (req, res) => {
+    const url = (req.body.url || 'http://localhost:11434').replace(/\/+$/, '');
+    try {
+        const tagRes = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) });
+        if (!tagRes.ok) return res.json({ success: false, error: `Ollama a répondu ${tagRes.status}` });
+        const data = await tagRes.json();
+        const models = (data.models || []).map(m => ({
+            name: m.name,
+            size: m.size ? Math.round(m.size / 1e9 * 10) / 10 + ' Go' : '?',
+            family: m.details?.family || ''
+        }));
+        // Recommend the best model for bridge analysis
+        const preferred = ['qwen2.5:14b', 'qwen2.5:7b', 'llama3:8b', 'mistral', 'gemma2'];
+        let recommended = models[0]?.name || '';
+        for (const pref of preferred) {
+            const match = models.find(m => m.name.includes(pref));
+            if (match) { recommended = match.name; break; }
+        }
+        res.json({ success: true, models, recommended });
+    } catch (e) {
+        res.json({ success: false, error: e.message || 'Connexion impossible' });
+    }
+});
+
+// User: request LLM analysis for a deal
+app.post('/api/llm/analyze', apiLimiter, requireAuth, async (req, res) => {
+    const config = db.getOllamaConfig();
+    if (!config.enabled || !config.model) {
+        return res.status(400).json({ error: 'Analyse IA non activée.' });
+    }
+
+    const { hands, bidding, contract, tricks, vulnerability, humanPos } = req.body;
+    if (!hands) return res.status(400).json({ error: 'Données de la donne requises.' });
+
+    // Build the prompt
+    const suitSym = { C: '♣', D: '♦', H: '♥', S: '♠' };
+    const rankFR = { J: 'V', Q: 'D', K: 'R', A: 'A' };
+    const posFR = { N: 'Nord', E: 'Est', S: 'Sud', W: 'Ouest' };
+
+    function formatHand(cards) {
+        const suits = ['S', 'H', 'D', 'C'];
+        return suits.map(s => {
+            const sc = (cards || []).filter(c => c.suit === s).sort((a, b) => b.value - a.value);
+            return suitSym[s] + ' ' + (sc.map(c => rankFR[c.rank] || c.rank).join(' ') || '—');
+        }).join('  ');
+    }
+
+    let prompt = `En tant que Grand Maître de Bridge, analysez cette donne de façon pédagogique en français.
+
+## Les 4 mains
+`;
+    for (const pos of ['N', 'E', 'S', 'W']) {
+        const h = hands[pos] || [];
+        const hcp = h.reduce((s, c) => s + ({ A: 4, K: 3, Q: 2, J: 1 }[c.rank] || 0), 0);
+        prompt += `${posFR[pos]}: ${formatHand(h)} (${hcp} HCP)\n`;
+    }
+
+    prompt += `\nVulnérabilité: ${vulnerability || 'Personne'}\n`;
+    prompt += `Le joueur humain est en ${posFR[humanPos] || 'Sud'}.\n`;
+
+    if (bidding && bidding.length > 0) {
+        prompt += `\n## Enchères jouées\n`;
+        for (const b of bidding) {
+            prompt += `${posFR[b.player]}: ${b.text}\n`;
+        }
+    }
+
+    if (contract) {
+        prompt += `\nContrat final: ${contract}\n`;
+    }
+
+    if (tricks && tricks.length > 0) {
+        prompt += `\n## Jeu de la carte (levées)\n`;
+        for (let i = 0; i < tricks.length; i++) {
+            const t = tricks[i];
+            prompt += `Levée ${i + 1}: `;
+            for (const p of ['W', 'N', 'E', 'S']) {
+                if (t[p]) prompt += `${posFR[p]}=${t[p]} `;
+            }
+            if (t.winner) prompt += `→ ${posFR[t.winner]}`;
+            prompt += '\n';
+        }
+    }
+
+    prompt += `
+## Consignes
+1. **Enchères** : Expliquez ce que le Maître aurait enchéri et pourquoi (en citant les HCP, la distribution, les conventions).
+2. **Jeu de la carte** : Expliquez l'entame idéale, les impasses à tenter, le plan de jeu du déclarant, la stratégie de défense.
+3. **Conseils** : Donnez 2-3 conseils concrets pour que le joueur s'améliore sur cette donne.
+Soyez précis, pédagogique, et utilisez le vocabulaire bridge français.`;
+
+    try {
+        const url = config.url.replace(/\/+$/, '');
+        const ollamaRes = await fetch(`${url}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: config.model,
+                prompt: prompt,
+                stream: false,
+                options: { temperature: 0.3, num_predict: 2000 }
+            }),
+            signal: AbortSignal.timeout(60000)
+        });
+
+        if (!ollamaRes.ok) {
+            return res.status(502).json({ error: `Ollama erreur ${ollamaRes.status}` });
+        }
+
+        const data = await ollamaRes.json();
+        res.json({ analysis: data.response || 'Pas de réponse.' });
+    } catch (e) {
+        console.error('[LLM] Error:', e.message);
+        res.status(502).json({ error: 'Erreur de communication avec Ollama: ' + e.message });
+    }
+});
+
 // ==================== DOUBLE-DUMMY SOLVER ====================
 
 app.post('/api/dds', apiLimiter, requireAuth, (req, res) => {
