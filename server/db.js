@@ -154,6 +154,19 @@ function init() {
         db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
     }
 
+    // Migration: add email column if missing
+    try {
+        db.prepare('SELECT email FROM users LIMIT 0').get();
+    } catch (e) {
+        db.exec("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''");
+    }
+
+    // Migration: add unique indexes for email and display_name (ignore if exists)
+    try {
+        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email != '' AND email IS NOT NULL");
+        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_display_unique ON users(display_name) WHERE display_name != '' AND display_name IS NOT NULL");
+    } catch (e) { /* indexes may already exist */ }
+
     // Migration: add trick_delay column if missing (existing installs)
     try {
         db.prepare('SELECT trick_delay FROM user_settings LIMIT 0').get();
@@ -198,16 +211,30 @@ function init() {
     return db;
 }
 
-function createUser(username, password, displayName) {
+function createUser(username, password, displayName, email) {
     const hash = bcrypt.hashSync(password, SALT_ROUNDS);
-    const stmt = db.prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)');
-    const result = stmt.run(username, hash, displayName || username);
+    const stmt = db.prepare('INSERT INTO users (username, password_hash, display_name, email) VALUES (?, ?, ?, ?)');
+    const result = stmt.run(username, hash, displayName || username, email || '');
 
     // Create default settings and rating
     db.prepare('INSERT INTO user_settings (user_id) VALUES (?)').run(result.lastInsertRowid);
     db.prepare('INSERT INTO player_ratings (user_id) VALUES (?)').run(result.lastInsertRowid);
 
     return result.lastInsertRowid;
+}
+
+function isUsernameTaken(username) {
+    return !!db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username);
+}
+
+function isEmailTaken(email) {
+    if (!email) return false;
+    return !!db.prepare("SELECT id FROM users WHERE email = ? COLLATE NOCASE AND email != ''").get(email);
+}
+
+function isDisplayNameTaken(displayName) {
+    if (!displayName) return false;
+    return !!db.prepare("SELECT id FROM users WHERE display_name = ? COLLATE NOCASE AND display_name != ''").get(displayName);
 }
 
 function authenticateUser(username, password) {
@@ -591,7 +618,8 @@ function close() {
 }
 
 module.exports = {
-    init, createUser, authenticateUser, getUserSettings, saveUserSettings,
+    init, createUser, authenticateUser, isUsernameTaken, isEmailTaken, isDisplayNameTaken,
+    getUserSettings, saveUserSettings,
     saveGameResult, getUserStats,
     getAllPlayers, sendMessage, getConversation, markMessagesRead, getUnreadCounts,
     updateRating, getPlayerRating, getRankings, getRankTitle,

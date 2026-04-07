@@ -192,7 +192,7 @@ app.get('/', (req, res) => {
 // ==================== AUTH ROUTES ====================
 
 app.post('/api/register', authLimiter, (req, res) => {
-    const { username, password, displayName } = req.body;
+    const { username, password, displayName, email } = req.body;
 
     if (!username || !password) {
         return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe requis.' });
@@ -210,14 +210,31 @@ app.post('/api/register', authLimiter, (req, res) => {
         return res.status(400).json({ error: 'Le mot de passe doit faire au moins 6 caractères.' });
     }
 
+    // Validate email format if provided
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Format d\'email invalide.' });
+    }
+
+    // Check uniqueness before insert (clear error messages)
+    if (db.isUsernameTaken(username)) {
+        return res.status(409).json({ error: 'Ce nom d\'utilisateur est déjà pris.' });
+    }
+    if (email && db.isEmailTaken(email)) {
+        return res.status(409).json({ error: 'Cet email est déjà utilisé par un autre compte.' });
+    }
+    const finalDisplayName = displayName || username;
+    if (db.isDisplayNameTaken(finalDisplayName)) {
+        return res.status(409).json({ error: 'Ce nom d\'affichage est déjà utilisé par un autre joueur.' });
+    }
+
     try {
-        const userId = db.createUser(username, password, displayName || username);
+        const userId = db.createUser(username, password, finalDisplayName, email);
         req.session.userId = userId;
         req.session.username = username;
-        res.json({ success: true, user: { id: userId, username, displayName: displayName || username } });
+        res.json({ success: true, user: { id: userId, username, displayName: finalDisplayName } });
     } catch (err) {
         if (err.message.includes('UNIQUE')) {
-            return res.status(409).json({ error: 'Ce nom d\'utilisateur est déjà pris.' });
+            return res.status(409).json({ error: 'Ce nom d\'utilisateur ou email est déjà pris.' });
         }
         console.error('Register error:', err);
         res.status(500).json({ error: 'Erreur serveur.' });
