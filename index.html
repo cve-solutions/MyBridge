@@ -126,6 +126,31 @@
                         <button id="admin-sync-clubs-btn" class="game-action-btn">MAJ Clubs</button>
                     </div>
                 </div>
+
+                <!-- Ollama / LLM config -->
+                <div class="admin-subsection">
+                    <h3 class="admin-subtitle">Analyse IA (Ollama)</h3>
+                    <div class="admin-ollama-form">
+                        <div class="admin-row" style="margin-bottom:8px">
+                            <label style="color:#aaa;font-size:0.9em;min-width:80px">URL Ollama</label>
+                            <input type="text" id="admin-ollama-url" class="mp-code-input" style="width:auto;flex:1;letter-spacing:0;text-align:left;font-weight:normal;font-size:0.9em" placeholder="http://localhost:11434" value="http://localhost:11434">
+                            <button id="admin-ollama-test-btn" class="game-action-btn" style="white-space:nowrap">Tester</button>
+                        </div>
+                        <div id="admin-ollama-test-result" style="font-size:0.85em;color:#888;margin-bottom:8px"></div>
+                        <div class="admin-row" style="margin-bottom:8px">
+                            <label style="color:#aaa;font-size:0.9em;min-width:80px">Modèle</label>
+                            <select id="admin-ollama-model" class="mp-select" style="flex:1">
+                                <option value="">-- Tester la connexion d'abord --</option>
+                            </select>
+                        </div>
+                        <div class="admin-row">
+                            <label style="color:#aaa;font-size:0.9em">
+                                <input type="checkbox" id="admin-ollama-enabled"> Activer l'analyse IA pour tous les joueurs
+                            </label>
+                            <button id="admin-ollama-save-btn" class="game-action-btn">Enregistrer</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

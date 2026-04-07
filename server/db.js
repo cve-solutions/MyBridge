@@ -142,6 +142,11 @@ function init() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS app_config (
+            key TEXT PRIMARY KEY,
+            value TEXT DEFAULT ''
+        );
+
         CREATE INDEX IF NOT EXISTS idx_ffb_clubs_name ON ffb_clubs(name);
         CREATE INDEX IF NOT EXISTS idx_ffb_clubs_city ON ffb_clubs(city);
         CREATE INDEX IF NOT EXISTS idx_ffb_clubs_dept ON ffb_clubs(department);
@@ -613,6 +618,31 @@ function getClubSyncInfo() {
     return { count, lastSync: row ? row.last_sync : null };
 }
 
+// ==================== APP CONFIG ====================
+
+function getConfig(key, defaultValue = '') {
+    const row = db.prepare('SELECT value FROM app_config WHERE key = ?').get(key);
+    return row ? row.value : defaultValue;
+}
+
+function setConfig(key, value) {
+    db.prepare('INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
+
+function getOllamaConfig() {
+    return {
+        url: getConfig('ollama_url', 'http://localhost:11434'),
+        model: getConfig('ollama_model', ''),
+        enabled: getConfig('ollama_enabled', 'false') === 'true'
+    };
+}
+
+function setOllamaConfig(config) {
+    if (config.url !== undefined) setConfig('ollama_url', config.url);
+    if (config.model !== undefined) setConfig('ollama_model', config.model);
+    if (config.enabled !== undefined) setConfig('ollama_enabled', config.enabled ? 'true' : 'false');
+}
+
 function close() {
     if (db) db.close();
 }
@@ -626,6 +656,7 @@ module.exports = {
     getPlayerProfile, savePlayerProfile, getGameHistory, getGameSummary,
     searchClubs, getClubCount, upsertClubs, getClubSyncInfo,
     getAllUsers, setUserRole, deleteUser, isAdmin,
+    getConfig, setConfig, getOllamaConfig, setOllamaConfig,
     createInvitation, respondToInvitation,
     close
 };

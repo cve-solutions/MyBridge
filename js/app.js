@@ -160,6 +160,12 @@ class BridgeApp {
         const syncClubsBtn = document.getElementById('admin-sync-clubs-btn');
         if (syncClubsBtn) syncClubsBtn.addEventListener('click', () => this._syncClubs());
 
+        // Admin: Ollama buttons
+        const ollamaTestBtn = document.getElementById('admin-ollama-test-btn');
+        if (ollamaTestBtn) ollamaTestBtn.addEventListener('click', () => this._testOllama());
+        const ollamaSaveBtn = document.getElementById('admin-ollama-save-btn');
+        if (ollamaSaveBtn) ollamaSaveBtn.addEventListener('click', () => this._saveOllamaConfig());
+
         // Admin panel starts hidden, shown by _setAdminVisible when role is confirmed
         const adminPanel = document.getElementById('admin-panel');
         if (adminPanel) adminPanel.classList.add('hidden');
@@ -1269,6 +1275,7 @@ class BridgeApp {
         if (isAdmin) {
             this._loadClubSyncInfo();
             this._loadAdminUsers();
+            this._loadOllamaConfig();
         }
     }
 
@@ -1379,6 +1386,90 @@ class BridgeApp {
             this._showMessage('Erreur de connexion');
         }
         if (btn) { btn.disabled = false; btn.textContent = 'MAJ Clubs'; }
+    }
+
+    // ==================== OLLAMA / LLM ADMIN ====================
+
+    async _loadOllamaConfig() {
+        try {
+            const res = await fetch('/api/admin/ollama');
+            if (!res.ok) return;
+            const config = await res.json();
+            const urlEl = document.getElementById('admin-ollama-url');
+            const modelEl = document.getElementById('admin-ollama-model');
+            const enabledEl = document.getElementById('admin-ollama-enabled');
+            if (urlEl) urlEl.value = config.url || 'http://localhost:11434';
+            if (enabledEl) enabledEl.checked = config.enabled;
+            if (modelEl && config.model) {
+                modelEl.innerHTML = `<option value="${config.model}" selected>${config.model}</option>`;
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    async _testOllama() {
+        const urlEl = document.getElementById('admin-ollama-url');
+        const resultEl = document.getElementById('admin-ollama-test-result');
+        const modelEl = document.getElementById('admin-ollama-model');
+        const btn = document.getElementById('admin-ollama-test-btn');
+        const url = urlEl ? urlEl.value.trim() : '';
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Test...'; }
+        if (resultEl) resultEl.innerHTML = '<span style="color:#888">Connexion en cours...</span>';
+
+        try {
+            const res = await fetch('/api/admin/ollama/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                resultEl.innerHTML = `<span style="color:#2ecc71">Connexion OK — ${data.models.length} modèle(s) disponible(s)</span>`;
+                // Populate model dropdown
+                if (modelEl) {
+                    const currentModel = modelEl.value;
+                    modelEl.innerHTML = '';
+                    for (const m of data.models) {
+                        const opt = document.createElement('option');
+                        opt.value = m.name;
+                        opt.textContent = `${m.name} (${m.size})`;
+                        if (m.name === data.recommended) opt.textContent += ' ★ recommandé';
+                        modelEl.appendChild(opt);
+                    }
+                    // Select recommended or previously selected
+                    if (data.recommended) modelEl.value = data.recommended;
+                    if (currentModel && [...modelEl.options].some(o => o.value === currentModel)) modelEl.value = currentModel;
+                }
+            } else {
+                resultEl.innerHTML = `<span style="color:#e74c3c">Échec : ${data.error}</span>`;
+            }
+        } catch (e) {
+            resultEl.innerHTML = `<span style="color:#e74c3c">Erreur réseau</span>`;
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'Tester'; }
+    }
+
+    async _saveOllamaConfig() {
+        const url = document.getElementById('admin-ollama-url')?.value.trim() || '';
+        const model = document.getElementById('admin-ollama-model')?.value || '';
+        const enabled = document.getElementById('admin-ollama-enabled')?.checked || false;
+
+        if (enabled && !model) {
+            this._showMessage('Sélectionnez un modèle avant d\'activer.');
+            return;
+        }
+
+        try {
+            await fetch('/api/admin/ollama', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, model, enabled })
+            });
+            this._showMessage(enabled ? `Analyse IA activée (${model})` : 'Analyse IA désactivée');
+        } catch (e) {
+            this._showMessage('Erreur de sauvegarde');
+        }
     }
 
     async _logout() {
@@ -1852,6 +1943,9 @@ class BridgeApp {
         // 5. Expert recommendations
         try { html += this._generateExpertAdvice(gs); } catch (e) { console.error('Expert advice error:', e); }
 
+        // 6. LLM Analysis button (if enabled)
+        html += '<div id="llm-analysis-section"></div>';
+
         } catch (e) {
             console.error('Analysis error:', e);
             html += `<div class="analysis-section"><p style="color:#e74c3c">Erreur lors de l'analyse: ${e.message}</p></div>`;
@@ -1859,6 +1953,9 @@ class BridgeApp {
 
         document.getElementById('analysis-body').innerHTML = html;
         this._openModal('analysis-modal');
+
+        // Check if LLM is available and show button
+        this._initLLMAnalysisButton(gs);
     }
 
     // Format bidding sequence as a W/N/E/S table (one row per round)
@@ -2104,6 +2201,107 @@ class BridgeApp {
 
         html += '</div>';
         return html;
+    }
+
+    // ==================== LLM ANALYSIS ====================
+
+    async _initLLMAnalysisButton(gs) {
+        const container = document.getElementById('llm-analysis-section');
+        if (!container) return;
+
+        try {
+            const res = await fetch('/api/llm/status');
+            if (!res.ok) return;
+            const status = await res.json();
+            if (!status.enabled) return;
+
+            container.innerHTML = `
+                <div class="analysis-section">
+                    <h4>Analyse du Grand Maître (IA : ${this._escapeHtml(status.model)})</h4>
+                    <button id="llm-analyze-btn" class="primary-btn" style="margin:8px 0">Demander l'analyse du Grand Maître</button>
+                    <div id="llm-analysis-result"></div>
+                </div>`;
+
+            document.getElementById('llm-analyze-btn').addEventListener('click', () => this._requestLLMAnalysis(gs));
+        } catch (e) { /* LLM not available */ }
+    }
+
+    async _requestLLMAnalysis(gs) {
+        const btn = document.getElementById('llm-analyze-btn');
+        const resultEl = document.getElementById('llm-analysis-result');
+        if (!btn || !resultEl) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Analyse en cours...';
+        resultEl.innerHTML = '<p class="hint-text">Le Grand Maître étudie la donne... (peut prendre 30-60 secondes)</p>';
+
+        // Prepare data
+        const hands = {};
+        for (const pos of POSITIONS) {
+            hands[pos] = (gs.originalHands[pos] || []).map(c => ({ suit: c.suit, rank: c.rank, value: c.value }));
+        }
+
+        const bidding = gs.bidding ? gs.bidding.bids.map(b => ({
+            player: b.player,
+            text: b.toString()
+        })) : [];
+
+        const contract = gs.contract ?
+            `${gs.contract.level}${gs.contract.suit === 'NT' ? 'SA' : SUIT_SYMBOLS[gs.contract.suit]} par ${POSITION_FR[gs.contract.declarer]}` : null;
+
+        const tricks = gs.tricks.map(t => {
+            const obj = { winner: t.getWinner() };
+            for (const p of POSITIONS) {
+                if (t.cards[p]) obj[p] = t.cards[p].toString();
+            }
+            return obj;
+        });
+
+        try {
+            const res = await fetch('/api/llm/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    hands, bidding, contract, tricks,
+                    vulnerability: gs.vulnerability,
+                    humanPos: gs.humanPos
+                })
+            });
+
+            const data = await res.json();
+            if (data.error) {
+                resultEl.innerHTML = `<p style="color:#e74c3c">${this._escapeHtml(data.error)}</p>`;
+            } else {
+                // Render markdown-like text
+                const html = this._renderLLMResponse(data.analysis);
+                resultEl.innerHTML = html;
+            }
+        } catch (e) {
+            resultEl.innerHTML = `<p style="color:#e74c3c">Erreur de communication avec l'IA.</p>`;
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Relancer l\'analyse';
+    }
+
+    _renderLLMResponse(text) {
+        // Simple markdown-to-HTML for LLM responses
+        let html = text
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/^### (.+)$/gm, '<h4 style="color:#e94560;margin:12px 0 4px">$1</h4>')
+            .replace(/^## (.+)$/gm, '<h4 style="color:#e8a020;margin:14px 0 6px">$1</h4>')
+            .replace(/^# (.+)$/gm, '<h3 style="color:#e8a020;margin:16px 0 8px">$1</h3>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+            .replace(/\n\n/g, '</p><p class="analysis-comment">')
+            .replace(/\n/g, '<br>');
+
+        // Wrap lists
+        html = html.replace(/(<li>.*?<\/li>)+/gs, '<ul style="margin:4px 0 4px 16px;color:#ccc">$&</ul>');
+
+        return `<div class="llm-response"><p class="analysis-comment">${html}</p></div>`;
     }
 
     // Simulate ideal play using master-level AI for all 4 positions

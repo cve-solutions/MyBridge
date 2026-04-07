@@ -152,6 +152,18 @@ body {
 .admin-btn-delete { color: #e74c3c; border-color: rgba(231,76,60,0.3); }
 .admin-btn-delete:hover { background: rgba(231,76,60,0.15); border-color: #e74c3c; }
 
+.llm-response {
+    background: rgba(232,160,32,0.05);
+    border: 1px solid rgba(232,160,32,0.2);
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 8px;
+}
+.llm-response h3, .llm-response h4 { margin-top: 10px; }
+.llm-response ul { list-style: disc; }
+.llm-response li { margin: 2px 0; color: #ccc; }
+.llm-response strong { color: #e8a020; }
+
 /* Seat Picker */
 .seat-picker {
     display: flex;
