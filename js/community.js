@@ -447,7 +447,7 @@ class CommunityManager {
                 if (this._clubResults) {
                     const match = this._clubResults.find(c => c.name === selected);
                     if (match && clubCode) {
-                        clubCode.value = match.siren;
+                        clubCode.value = match.code;
                     }
                 }
             });
@@ -467,7 +467,7 @@ class CommunityManager {
                 for (const c of results) {
                     const opt = document.createElement('option');
                     opt.value = c.name;
-                    opt.textContent = `${c.postal_code} ${c.city} (${c.siren})`;
+                    opt.textContent = `${c.postal_code} ${c.city} (FFB: ${c.code})`;
                     datalist.appendChild(opt);
                 }
             }

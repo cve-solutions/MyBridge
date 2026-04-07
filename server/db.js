@@ -133,12 +133,15 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_mp_games_table ON multiplayer_games(table_id);
 
         CREATE TABLE IF NOT EXISTS ffb_clubs (
-            siren TEXT PRIMARY KEY,
+            code TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             city TEXT DEFAULT '',
             postal_code TEXT DEFAULT '',
             address TEXT DEFAULT '',
             department TEXT DEFAULT '',
+            phone TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            slug TEXT DEFAULT '',
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -171,6 +174,20 @@ function init() {
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email != '' AND email IS NOT NULL");
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_display_unique ON users(display_name) WHERE display_name != '' AND display_name IS NOT NULL");
     } catch (e) { /* indexes may already exist */ }
+
+    // Migration: recreate ffb_clubs with new schema if old schema has 'siren' column
+    try {
+        db.prepare('SELECT siren FROM ffb_clubs LIMIT 0').get();
+        // Old schema detected — drop and recreate (data will be re-synced)
+        db.exec('DROP TABLE IF EXISTS ffb_clubs');
+        db.exec(`CREATE TABLE ffb_clubs (
+            code TEXT PRIMARY KEY, name TEXT NOT NULL, city TEXT DEFAULT '',
+            postal_code TEXT DEFAULT '', address TEXT DEFAULT '', department TEXT DEFAULT '',
+            phone TEXT DEFAULT '', email TEXT DEFAULT '', slug TEXT DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+        console.log('[DB] Migrated ffb_clubs table (siren → code FFB)');
+    } catch (e) { /* already new schema or table doesn't exist yet */ }
 
     // Migration: add trick_delay column if missing (existing installs)
     try {
@@ -579,12 +596,12 @@ function isAdmin(userId) {
 function searchClubs(query, limit = 20) {
     const q = `%${query}%`;
     return db.prepare(`
-        SELECT siren, name, city, postal_code, department
+        SELECT code, name, city, postal_code, department
         FROM ffb_clubs
-        WHERE name LIKE ? OR city LIKE ? OR postal_code LIKE ?
+        WHERE name LIKE ? OR city LIKE ? OR postal_code LIKE ? OR code LIKE ?
         ORDER BY name ASC
         LIMIT ?
-    `).all(q, q, q, limit);
+    `).all(q, q, q, q, limit);
 }
 
 function getClubCount() {
@@ -594,19 +611,22 @@ function getClubCount() {
 
 function upsertClubs(clubs) {
     const stmt = db.prepare(`
-        INSERT INTO ffb_clubs (siren, name, city, postal_code, address, department, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(siren) DO UPDATE SET
+        INSERT INTO ffb_clubs (code, name, city, postal_code, address, department, phone, email, slug, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(code) DO UPDATE SET
             name = excluded.name,
             city = excluded.city,
             postal_code = excluded.postal_code,
             address = excluded.address,
             department = excluded.department,
+            phone = excluded.phone,
+            email = excluded.email,
+            slug = excluded.slug,
             updated_at = CURRENT_TIMESTAMP
     `);
     const tx = db.transaction(() => {
         for (const c of clubs) {
-            stmt.run(c.siren, c.name, c.city, c.postalCode, c.address, c.department);
+            stmt.run(c.code, c.name, c.city, c.postalCode, c.address, c.department, c.phone || '', c.email || '', c.slug || '');
         }
     });
     tx();

@@ -839,48 +839,134 @@ app.post('/api/admin/clubs/sync', apiLimiter, requireAdmin, async (req, res) => 
     }
 });
 
-// Fetch all bridge clubs from API and store locally
+// Fetch all bridge clubs from FFB sitemap + scrape individual pages
 async function syncFFBClubs() {
-    const allClubs = [];
-    let page = 1;
-    const perPage = 25;
+    console.log('[FFB Sync] Starting club sync from public.ffbridge.fr...');
 
-    console.log('[FFB Sync] Starting club sync...');
+    // Step 1: Get club slugs from sitemap
+    let sitemapXml;
+    try {
+        const res = await fetch('https://public.ffbridge.fr/sitemap.xml', { signal: AbortSignal.timeout(15000) });
+        if (!res.ok) throw new Error(`Sitemap HTTP ${res.status}`);
+        sitemapXml = await res.text();
+    } catch (e) {
+        console.error('[FFB Sync] Failed to fetch sitemap:', e.message);
+        throw new Error('Impossible de récupérer le sitemap FFB: ' + e.message);
+    }
 
-    while (true) {
-        const url = `https://recherche-entreprises.api.gouv.fr/search?q=bridge+club&per_page=${perPage}&page=${page}&etat_administratif=A`;
-        const response = await fetch(url);
-        if (!response.ok) {
-            console.warn(`[FFB Sync] API error on page ${page}: ${response.status}`);
-            break;
+    // Extract club slugs: URLs matching /clubs/xxx (not /clubs/trouver-club-de-bridge)
+    const slugRegex = /https?:\/\/[^<]*\/clubs\/([a-z0-9-]+)/g;
+    const slugs = [];
+    let match;
+    while ((match = slugRegex.exec(sitemapXml)) !== null) {
+        const slug = match[1];
+        if (slug !== 'trouver-club-de-bridge' && !slugs.includes(slug)) {
+            slugs.push(slug);
         }
-        const data = await response.json();
-        const results = data.results || [];
-        if (results.length === 0) break;
+    }
+
+    console.log(`[FFB Sync] Found ${slugs.length} club slugs in sitemap.`);
+    if (slugs.length === 0) throw new Error('Aucun club trouvé dans le sitemap.');
+
+    // Step 2: Scrape each club page (in batches for speed)
+    const allClubs = [];
+    const BATCH_SIZE = 5;
+    const DELAY_MS = 300;
+    let errors = 0;
+
+    for (let i = 0; i < slugs.length; i += BATCH_SIZE) {
+        const batch = slugs.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+            batch.map(slug => _scrapeClubPage(slug))
+        );
 
         for (const r of results) {
-            allClubs.push({
-                siren: r.siren || '',
-                name: r.nom_complet || '',
-                city: r.siege?.libelle_commune || '',
-                postalCode: r.siege?.code_postal || '',
-                address: r.siege?.adresse || '',
-                department: r.siege?.departement || ''
-            });
+            if (r.status === 'fulfilled' && r.value) {
+                allClubs.push(r.value);
+            } else {
+                errors++;
+            }
         }
 
-        if (results.length < perPage) break;
-        page++;
-        // Respectful rate: 200ms between pages
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Save progress every 50 clubs
+        if (allClubs.length > 0 && allClubs.length % 50 < BATCH_SIZE) {
+            db.upsertClubs(allClubs.slice(-50));
+            console.log(`[FFB Sync] Progress: ${allClubs.length}/${slugs.length} clubs...`);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, DELAY_MS));
     }
 
     if (allClubs.length > 0) {
         db.upsertClubs(allClubs);
     }
 
-    console.log(`[FFB Sync] Done: ${allClubs.length} clubs synced.`);
+    console.log(`[FFB Sync] Done: ${allClubs.length} clubs synced (${errors} errors).`);
     return allClubs.length;
+}
+
+// Scrape a single club page from public.ffbridge.fr
+async function _scrapeClubPage(slug) {
+    try {
+        const res = await fetch(`https://public.ffbridge.fr/clubs/${slug}`, {
+            signal: AbortSignal.timeout(10000),
+            headers: { 'User-Agent': 'MyBridge/1.0 (club sync)' }
+        });
+        if (!res.ok) return null;
+        const html = await res.text();
+
+        // Extract entity number (FFB code) — appears as "N° d'entité : XXXXXXX" or in meta
+        const codeMatch = html.match(/(?:entit[eé]|entity)[^0-9]*(\d{5,8})/i) ||
+                          html.match(/<[^>]*class="[^"]*entity[^"]*"[^>]*>(\d{5,8})/i);
+        const code = codeMatch ? codeMatch[1] : '';
+
+        // Extract club name from <h1> or <title>
+        const nameMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i) ||
+                          html.match(/<title>([^<]+)/i);
+        let name = nameMatch ? nameMatch[1].replace(/<[^>]*>/g, '').trim() : slug.replace(/-/g, ' ');
+        // Clean up name (remove " - FFB" suffix)
+        name = name.replace(/\s*[-–—]\s*(FFB|Fédération).*$/i, '').trim();
+
+        // Extract address
+        const addrMatch = html.match(/(?:game_address|adresse)[^>]*>([^<]+)/i) ||
+                          html.match(/(\d{5})\s+([A-ZÉÈÊËÀÂÄÎÏÔÙÛÜÇ][A-ZÉÈÊËÀÂÄÎÏÔÙÛÜÇa-zéèêëàâäîïôùûüç\s-]+)/);
+
+        // Extract postal code + city
+        const cpMatch = html.match(/(\d{5})\s+([A-ZÉÈÊËÀÂÄÎÏÔÙÛÜÇ][A-ZÉÈÊËÀÂÄÎÏÔÙÛÜÇ\s'-]+)/);
+        const postalCode = cpMatch ? cpMatch[1] : '';
+        const city = cpMatch ? cpMatch[2].trim() : '';
+
+        // Extract phone
+        const phoneMatch = html.match(/(?:tel|phone|téléphone)[^>]*>([^<]*\d{2}[\s.]?\d{2}[\s.]?\d{2}[\s.]?\d{2}[\s.]?\d{2})/i) ||
+                           html.match(/(0[1-9][\s.]?\d{2}[\s.]?\d{2}[\s.]?\d{2}[\s.]?\d{2})/);
+        const phone = phoneMatch ? phoneMatch[1].trim() : '';
+
+        // Extract email
+        const emailMatch = html.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+        const email = emailMatch ? emailMatch[1] : '';
+
+        // Department from postal code
+        const department = postalCode ? postalCode.substring(0, 2) : '';
+
+        // Full address
+        const address = addrMatch ? addrMatch[1]?.trim() || '' : '';
+
+        if (!code && !name) return null;
+
+        return {
+            code: code || `ffb-${slug}`,
+            name,
+            city,
+            postalCode,
+            address,
+            department,
+            phone,
+            email,
+            slug
+        };
+    } catch (e) {
+        return null;
+    }
 }
 
 // Auto-sync clubs weekly (every Sunday at 3am)
