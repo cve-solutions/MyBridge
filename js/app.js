@@ -1433,11 +1433,14 @@ class BridgeApp {
                     for (const m of data.models) {
                         const opt = document.createElement('option');
                         opt.value = m.name;
-                        opt.textContent = `${m.name} (${m.size})`;
-                        if (m.name === data.recommended) opt.textContent += ' ★ recommandé';
+                        let label = `${m.name} (${m.size}`;
+                        if (m.paramSize) label += `, ${m.paramSize}`;
+                        if (m.family) label += `, ${m.family}`;
+                        label += ')';
+                        if (m.name === data.recommended) label += ' ★ recommandé';
+                        opt.textContent = label;
                         modelEl.appendChild(opt);
                     }
-                    // Select recommended or previously selected
                     if (data.recommended) modelEl.value = data.recommended;
                     if (currentModel && [...modelEl.options].some(o => o.value === currentModel)) modelEl.value = currentModel;
                 }

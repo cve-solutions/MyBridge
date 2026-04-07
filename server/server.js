@@ -541,6 +541,101 @@ app.get('/api/clubs/search', apiLimiter, requireAuth, (req, res) => {
 // Club sync info
 // ==================== OLLAMA / LLM ====================
 
+// Score each model for bridge analysis suitability (higher = better)
+function _scoreBridgeModels(models) {
+    if (!models.length) return '';
+
+    // Extract parameter count from parameter_size string like "14B", "7.6B", "70B"
+    function parseParams(paramStr) {
+        if (!paramStr) return 0;
+        const m = paramStr.match(/([\d.]+)\s*([BMK])/i);
+        if (!m) return 0;
+        const val = parseFloat(m[1]);
+        const unit = m[2].toUpperCase();
+        if (unit === 'B') return val;
+        if (unit === 'M') return val / 1000;
+        if (unit === 'K') return val / 1e6;
+        return val;
+    }
+
+    // Families/architectures known for good reasoning & multilingual
+    const familyBonus = {
+        'qwen2': 25, 'qwen2.5': 30, 'qwen3': 35,
+        'llama': 15, 'llama3': 20, 'llama3.1': 22, 'llama3.2': 22, 'llama4': 25,
+        'gemma': 12, 'gemma2': 18, 'gemma3': 22,
+        'mistral': 15, 'mixtral': 20,
+        'phi': 10, 'phi3': 14, 'phi4': 18,
+        'command-r': 20, 'deepseek': 22, 'deepseek-r1': 28,
+        'yi': 12
+    };
+
+    // Name patterns that indicate bad fit (code-only, vision-only, embedding)
+    const penaltyPatterns = [
+        /\bcode\b/i, /\bcoder\b/i, /\bembed/i, /\bvision\b/i,
+        /\bstarcoder/i, /\bcodellama/i, /\bsqlcoder/i
+    ];
+
+    // Name patterns that indicate good fit for reasoning/chat
+    const bonusPatterns = [
+        /\binstruct\b/i, /\bchat\b/i, /\bthink\b/i, /\breason\b/i
+    ];
+
+    const scored = models.map(m => {
+        let score = 0;
+        const name = m.name.toLowerCase();
+        const params = parseParams(m.paramSize);
+
+        // 1. Size score (bigger = better reasoning, capped at 70B for speed)
+        if (params > 0) {
+            if (params >= 30) score += 40;      // 30B+ excellent
+            else if (params >= 14) score += 35;  // 14B+ very good
+            else if (params >= 7) score += 25;   // 7B+ good
+            else if (params >= 3) score += 15;   // 3B+ acceptable
+            else score += 5;                     // <3B weak
+            // Penalty for very large (too slow for interactive use)
+            if (params > 70) score -= 10;
+        } else {
+            // Guess from file size (1B params ≈ 0.5-1 Go on disk)
+            const sizeGo = m.sizeBytes / 1e9;
+            if (sizeGo >= 15) score += 35;
+            else if (sizeGo >= 5) score += 25;
+            else if (sizeGo >= 2) score += 15;
+            else score += 5;
+        }
+
+        // 2. Family bonus (known good architectures)
+        for (const [fam, bonus] of Object.entries(familyBonus)) {
+            if (m.family.toLowerCase().includes(fam) || name.includes(fam.replace('.', ''))) {
+                score += bonus;
+                break;
+            }
+        }
+
+        // 3. Quantization (prefer higher quality)
+        const quant = (m.quantization || '').toUpperCase();
+        if (quant.includes('F16') || quant.includes('FP16')) score += 10;
+        else if (quant.includes('Q8')) score += 8;
+        else if (quant.includes('Q6')) score += 6;
+        else if (quant.includes('Q5')) score += 4;
+        else if (quant.includes('Q4')) score += 2;
+        else if (quant.includes('Q3') || quant.includes('Q2')) score -= 5;
+
+        // 4. Name-based bonuses/penalties
+        if (penaltyPatterns.some(p => p.test(name))) score -= 20;
+        if (bonusPatterns.some(p => p.test(name))) score += 5;
+
+        // 5. Multilingual bonus (these models handle French well)
+        if (/qwen|gemma|llama|mistral|mixtral|command|aya/.test(name)) score += 5;
+
+        return { name: m.name, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    console.log('[LLM] Model scores:', scored.map(s => `${s.name}=${s.score}`).join(', '));
+    return scored[0]?.name || models[0]?.name || '';
+}
+
 // Get Ollama config (any user can check if enabled)
 app.get('/api/llm/status', apiLimiter, requireAuth, (req, res) => {
     const config = db.getOllamaConfig();
@@ -568,15 +663,14 @@ app.post('/api/admin/ollama/test', apiLimiter, requireAdmin, async (req, res) =>
         const models = (data.models || []).map(m => ({
             name: m.name,
             size: m.size ? Math.round(m.size / 1e9 * 10) / 10 + ' Go' : '?',
-            family: m.details?.family || ''
+            sizeBytes: m.size || 0,
+            family: m.details?.family || '',
+            paramSize: m.details?.parameter_size || '',
+            quantization: m.details?.quantization_level || ''
         }));
-        // Recommend the best model for bridge analysis
-        const preferred = ['qwen2.5:14b', 'qwen2.5:7b', 'llama3:8b', 'mistral', 'gemma2'];
-        let recommended = models[0]?.name || '';
-        for (const pref of preferred) {
-            const match = models.find(m => m.name.includes(pref));
-            if (match) { recommended = match.name; break; }
-        }
+
+        // Intelligent model scoring for bridge analysis
+        const recommended = _scoreBridgeModels(models);
         res.json({ success: true, models, recommended });
     } catch (e) {
         res.json({ success: false, error: e.message || 'Connexion impossible' });
